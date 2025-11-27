@@ -2,6 +2,7 @@ package authentication
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo"
 )
@@ -14,38 +15,27 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
-func (h *Handler) RegisterHandler(c echo.Context) error {
-	var req RegisterRequest
-
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "Invalid JSON format",
+func (h *Handler) VerifyAndGetChatsHandler(c echo.Context) error {
+	authHeader := c.Request().Header.Get("Authorization")
+	if authHeader == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{
+			"error": "Authorization header required",
 		})
 	}
 
-	if req.Username == "" || req.Email == "" || req.Password == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "All fields are required",
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+	if token == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{
+			"error": "Bearer token required",
 		})
 	}
 
-	if len(req.Password) < 6 {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "Password must be at least 6 characters",
-		})
-	}
-
-	response, err := h.service.Register(c.Request().Context(), &req)
+	response, err := h.service.VerifyAndGetChats(c.Request().Context(), token)
 	if err != nil {
-		errorMsg := "Registration failed"
-		if err.Error() == "email already exists" {
-			errorMsg = "Email already registered"
-		}
-
-		return c.JSON(http.StatusConflict, map[string]string{
-			"error": errorMsg,
+		return c.JSON(http.StatusUnauthorized, map[string]string{
+			"error": err.Error(),
 		})
 	}
 
-	return c.JSON(http.StatusCreated, response)
+	return c.JSON(http.StatusOK, response)
 }

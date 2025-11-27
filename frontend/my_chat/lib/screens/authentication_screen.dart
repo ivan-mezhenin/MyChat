@@ -1,17 +1,17 @@
-// screens/registration_screen.dart
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:my_chat/screens/chats_screen.dart';
 
-class RegistrationScreen extends StatefulWidget {
-  const RegistrationScreen({super.key});
+class AuthenticationScreen extends StatefulWidget {
+  const AuthenticationScreen({super.key});
 
   @override
-  State<RegistrationScreen> createState() => _RegistrationScreenState();
+  State<AuthenticationScreen> createState() => _AuthenticationScreenState();
 }
 
-class _RegistrationScreenState extends State<RegistrationScreen> {
-  final TextEditingController _usernameController = TextEditingController();
+class _AuthenticationScreenState extends State<AuthenticationScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
@@ -19,12 +19,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   
   static const String baseUrl = 'http://localhost:8080';
 
-  void _registerUser() async {
-    final String username = _usernameController.text.trim();
+  void _authUser() async {
     final String email = _emailController.text.trim();
     final String password = _passwordController.text.trim();
 
-    if (username.isEmpty || email.isEmpty || password.isEmpty) {
+    if (email.isEmpty || password.isEmpty) {
       _showSnackBar('Пожалуйста, заполните все поля');
       return;
     }
@@ -39,37 +38,52 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     });
 
     try {
-      final Map<String, dynamic> requestBody = {
-        'username': username,
-        'email': email,
-        'password': password,
-      };
+      UserCredential userCredential = await FirebaseAuth.instance
+      .signInWithEmailAndPassword(email: email, password: password);
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/auth/register'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: json.encode(requestBody),
-      );
-
-      if (response.statusCode == 201) {
-        _showSnackBar('Регистрация успешна!');
-      } else if (response.statusCode == 400) {
-        final Map<String, dynamic> errorData = json.decode(response.body);
-        _showSnackBar('Ошибка: ${errorData['message']}');
-      } else if (response.statusCode == 409) {
-        _showSnackBar('Пользователь с таким email уже существует');
-      } else {
-        _showSnackBar('Ошибка сервера: ${response.statusCode}');
+      String? idToken = await userCredential.user!.getIdToken();
+      if (idToken == null) {
+        throw Exception("Не удалось получить токен авторизации.");
       }
+
+      final responseData = await _verifyTokenAndGetChats(idToken);
+
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatsScreen(
+            chats: responseData['chats'],
+            userUID: responseData['user']['uid'],
+            authToken: idToken,
+          ),
+        ),
+      );
+    }
+    } on FirebaseAuthException catch (e) {
+      _showSnackBar('Ошибка Firebase: ${e.message}');
     } catch (e) {
-      _showSnackBar('Ошибка сети: $e');
+      _showSnackBar('Ошибка: $e');
     } finally {
       setState(() {
         _isLoading = false;
       });
     }
+  }
+
+  Future<Map<String, dynamic>> _verifyTokenAndGetChats(String idToken) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/auth/initial-data'),
+      headers: {
+        'Authorization': 'Bearer $idToken',
+      },
+    );
+
+    if (response.statusCode != 200) {
+        throw Exception('Ошибка сервера: ${response.statusCode}');
+    } 
+
+      return json.decode(response.body);
   }
 
   void _showSnackBar(String message) {
@@ -85,7 +99,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Регистрация'),
+        title: const Text('Вход'),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
       ),
@@ -93,19 +107,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         padding: const EdgeInsets.all(24.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextField(
-              controller: _usernameController,
-              decoration: const InputDecoration(
-                labelText: 'Имя',
-                hintText: 'Введите Ваше имя',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.person),
-              ),
-            ),
-            
-            const SizedBox(height: 20),
-            
+          children: [            
             TextField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
@@ -140,7 +142,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                       child: CircularProgressIndicator(),
                     )
                   : ElevatedButton(
-                    onPressed: _registerUser,
+                    onPressed: _authUser,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue,
                         foregroundColor: Colors.white,
@@ -149,7 +151,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         ),
                       ),
                       child: const Text(
-                        'Зарегистрироваться',
+                        'Войти',
                         style: TextStyle(fontSize: 16),
                       ),
                     ),

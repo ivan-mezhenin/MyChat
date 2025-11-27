@@ -7,6 +7,7 @@ import (
 
 	"MyChatServer/internal/authentication"
 	"MyChatServer/internal/database"
+	"MyChatServer/internal/registration"
 
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
@@ -28,10 +29,15 @@ func main() {
 	e.Use(middleware.CORS())
 	e.Use(middleware.Logger())
 
+	regService := registration.NewService(db)
+	regHandler := registration.NewHandler(regService)
+
+	e.POST("/api/auth/register", regHandler.RegisterHandler)
+
 	authService := authentication.NewService(db)
 	authHandler := authentication.NewHandler(authService)
 
-	e.POST("/api/auth/register", authHandler.RegisterHandler)
+	e.GET("/api/auth/initial-data", authHandler.VerifyAndGetChatsHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {

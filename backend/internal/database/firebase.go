@@ -99,3 +99,12 @@ func (c *Client) GetUserByEmail(ctx context.Context, email string) (*User, error
 
 	return &user, nil
 }
+
+func (c *Client) ValidateIdToken(ctx context.Context, idToken string) (string, error) {
+	token, err := c.Auth.VerifyIDToken(ctx, idToken)
+	if err != nil {
+		return "", fmt.Errorf("invalid idToken: %v", err)
+	}
+
+	return token.UID, nil
+}

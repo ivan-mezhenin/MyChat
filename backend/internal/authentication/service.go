@@ -38,17 +38,17 @@ func NewService(db *database.Client) *Service {
 func (s *Service) VerifyAndGetChats(ctx context.Context, idToken string) (*AuthResponse, error) {
 	userUID, err := s.db.ValidateIdToken(ctx, idToken)
 	if err != nil {
-		return nil, fmt.Errorf("Authentication failed: %v: ", err)
+		return nil, fmt.Errorf("authentication failed: %v: ", err)
 	}
 
 	user, err := s.getUserData(ctx, userUID)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to get user data: %v", err)
+		return nil, fmt.Errorf("failed to get user data: %v", err)
 	}
 
 	chats, err := s.getUserChats(ctx, userUID)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to get user chats: %v", err)
+		return nil, fmt.Errorf("failed to get user chats: %v", err)
 	}
 
 	return &AuthResponse{

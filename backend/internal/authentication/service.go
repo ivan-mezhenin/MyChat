@@ -12,45 +12,97 @@ type Service struct {
 	db *database.Client
 }
 
-type RegisterRequest struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+type AuthResponse struct {
+	User  UserResponse   `json:"user"`
+	Chats []ChatResponse `json:"chats"`
 }
 
-type RegisterResponse struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
-	Name   string `json:"name"`
+type UserResponse struct {
+	UID   string `json:"uid"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+type ChatResponse struct {
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	Type            string    `json:"type"`
+	LastMessage     string    `json:"last_message,omitempty"`
+	LastMessageTime time.Time `json:"last_message_time,omitempty"`
 }
 
 func NewService(db *database.Client) *Service {
 	return &Service{db: db}
 }
 
-func (s *Service) Register(ctx context.Context, req *RegisterRequest) (*RegisterResponse, error) {
-	authUser, err := s.db.CreateUserInAuth(ctx, req.Email, req.Password, req.Username)
+func (s *Service) VerifyAndGetChats(ctx context.Context, idToken string) (*AuthResponse, error) {
+	userUID, err := s.db.ValidateIdToken(ctx, idToken)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create user: %v", err)
+		return nil, fmt.Errorf("Authentication failed: %v: ", err)
 	}
 
-	userProfile := &database.User{
-		UID:       authUser.UID,
-		Name:      req.Username,
-		Email:     req.Email,
-		CreatedAt: time.Now(),
-		IsBanned:  false,
-	}
-
-	err = s.db.SaveUserInFirestore(ctx, userProfile)
+	user, err := s.getUserData(ctx, userUID)
 	if err != nil {
-		s.db.DeleteAuthUser(ctx, authUser.UID)
-		return nil, fmt.Errorf("failed to save user profile: %v", err)
+		return nil, fmt.Errorf("Failed to get user data: %v", err)
 	}
 
-	return &RegisterResponse{
-		UserID: authUser.UID,
-		Email:  authUser.Email,
-		Name:   req.Username,
+	chats, err := s.getUserChats(ctx, userUID)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get user chats: %v", err)
+	}
+
+	return &AuthResponse{
+		User:  user,
+		Chats: chats,
 	}, nil
+}
+
+func (s *Service) getUserData(ctx context.Context, userUID string) (UserResponse, error) {
+	doc, err := s.db.Firestore.Collection("users").Doc(userUID).Get(ctx)
+	if err != nil {
+		return UserResponse{}, err
+	}
+
+	var user database.User
+	if err := doc.DataTo(&user); err != nil {
+		return UserResponse{}, err
+	}
+
+	return UserResponse{
+		UID:   user.UID,
+		Name:  user.Name,
+		Email: user.Email,
+	}, nil
+}
+
+func (s *Service) getUserChats(ctx context.Context, userUID string) ([]ChatResponse, error) {
+	docs, err := s.db.Firestore.Collection("chats").Where("participants", "array-contains", userUID).Documents(ctx).GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	chats := make([]ChatResponse, len(docs))
+
+	for i, doc := range docs {
+		data := doc.Data()
+
+		chat := ChatResponse{
+			ID:   doc.Ref.ID,
+			Name: data["name"].(string),
+			Type: data["type"].(string),
+		}
+
+		if lastMessage, ok := data["last_message"].(map[string]interface{}); ok {
+			if text, ok := lastMessage["text"].(string); ok {
+				chat.LastMessage = text
+			}
+			if timestamp, ok := lastMessage["timestamp"].(time.Time); ok {
+				chat.LastMessageTime = timestamp
+			}
+		}
+
+		chats[i] = chat
+	}
+
+	return chats, nil
 }

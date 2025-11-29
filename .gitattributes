@@ -15,3 +15,17 @@ third_party/ linguist-vendored
 *.h linguist-detectable=false
 *.cc linguist-detectable=false
 
+cmake/ linguist-vendored
+.cmake/ linguist-vendored
+
+# Игнорируем конкретные типы файлов CMake
+CMakeLists.txt linguist-detectable=false
+*.cmake linguist-detectable=false
+
+# Игнорируем папки зависимостей
+vendor/ linguist-vendored
+third_party/ linguist-vendored
+
+*.a linguist-detectable=false
+*.so linguist-detectable=false
+*.dylib linguist-detectable=false

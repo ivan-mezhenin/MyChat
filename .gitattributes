@@ -1,0 +1,17 @@
+*.go linguist-language=Go
+  
+*.dart linguist-language=Dart
+
+ios/ linguist-vendored
+android/ linguist-vendored
+build/ linguist-vendored
+third_party/ linguist-vendored
+
+*.a linguist-detectable=false
+*.so linguist-detectable=false
+*.dylib linguist-detectable=false
+
+*.cpp linguist-detectable=false
+*.h linguist-detectable=false
+*.cc linguist-detectable=false
+

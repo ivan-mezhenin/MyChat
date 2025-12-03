@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -72,6 +73,14 @@ func (h *Handler) SendMessage(c echo.Context) error {
 
 func (h *Handler) getUserIDFromToken(r *http.Request) (string, error) {
 	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return "", fmt.Errorf("authorization header required")
+	}
+
 	token := strings.TrimPrefix(authHeader, "Bearer ")
-	return h.service.ValidateToken(r.Context(), token)
+	if token == "" {
+		return "", fmt.Errorf("bearer token required")
+	}
+
+	return h.service.db.ValidateIdToken(r.Context(), token)
 }

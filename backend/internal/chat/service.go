@@ -63,6 +63,48 @@ func (s *Service) GetMessages(ctx context.Context, chatID, userID string) ([]Mes
 	return messages, nil
 }
 
+func (s *Service) SendMessage(ctx context.Context, chatID, userID, text string) (*MessageResponse, error) {
+	isParticipant, err := s.isChatParticipant(ctx, chatID, userID)
+	if err != nil || !isParticipant {
+		return nil, fmt.Errorf("access denied or chat not found")
+	}
+
+	messageData := map[string]interface{}{
+		"chatId":    chatID,
+		"senderId":  userID,
+		"text":      text,
+		"timestamp": time.Now(),
+		"type":      0,
+	}
+
+	// Сохраняем сообщение
+	docRef, _, err := s.db.Firestore.Collection("messages").
+		Doc(chatID).
+		Collection("messages").
+		Add(ctx, messageData)
+
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = s.db.Firestore.Collection("chats").Doc(chatID).Update(ctx, []firestore.Update{
+		{Path: "last_message", Value: messageData},
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &MessageResponse{
+		ID:        docRef.ID,
+		ChatID:    chatID,
+		SenderID:  userID,
+		Text:      text,
+		Timestamp: messageData["timestamp"].(time.Time),
+		Type:      0,
+	}, nil
+}
+
 func (s *Service) isChatParticipant(ctx context.Context, chatID, userID string) (bool, error) {
 	doc, err := s.db.Firestore.Collection("chats").Doc(chatID).Get(ctx)
 	if err != nil {

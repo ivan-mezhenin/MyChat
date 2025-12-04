@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"MyChatServer/internal/authentication"
+	"MyChatServer/internal/chat"
 	"MyChatServer/internal/database"
 	"MyChatServer/internal/registration"
 
@@ -38,6 +39,11 @@ func main() {
 	authHandler := authentication.NewHandler(authService)
 
 	e.GET("/api/auth/initial-data", authHandler.VerifyAndGetChatsHandler)
+
+	chatService := chat.NewService(db)
+	chatHandler := chat.NewHandler(chatService)
+	e.GET("/api/chats/:chatId/messages", chatHandler.GetMessages)
+	e.POST("/api/chats/:chatId/messages", chatHandler.SendMessage)
 
 	port := os.Getenv("PORT")
 	if port == "" {

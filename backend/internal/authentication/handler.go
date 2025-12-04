@@ -1,6 +1,7 @@
 package authentication
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -32,6 +33,7 @@ func (h *Handler) VerifyAndGetChatsHandler(c echo.Context) error {
 
 	response, err := h.service.VerifyAndGetChats(c.Request().Context(), token)
 	if err != nil {
+		fmt.Println(err)
 		return c.JSON(http.StatusUnauthorized, map[string]string{
 			"error": err.Error(),
 		})

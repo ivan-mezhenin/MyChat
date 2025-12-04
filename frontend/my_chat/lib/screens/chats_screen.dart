@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:my_chat/screens/authentication_screen.dart';
+import 'package:my_chat/screens/chat_detailed_screen.dart';
 
 class ChatsScreen extends StatefulWidget {
   final List<dynamic> chats;
@@ -31,10 +32,18 @@ class _ChatsScreenState extends State<ChatsScreen> {
     );
   }
 
-  void _openChat(Map<String, dynamic> chat) {
-    // TODO: В будущем - переход в конкретный чат
-  }
-
+void _openChat(Map<String, dynamic> chat) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => ChatDetailScreen(
+        chatId: chat['id'],
+        chatName: chat['name'],
+        authToken: widget.authToken,
+      ),
+    ),
+  );
+}
   @override
   Widget build(BuildContext context) {
     return Scaffold(

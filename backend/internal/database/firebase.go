@@ -14,6 +14,7 @@ import (
 type Client struct {
 	Auth      *auth.Client
 	Firestore *firestore.Client
+	APIKey    string
 }
 
 type User struct {
@@ -24,7 +25,7 @@ type User struct {
 	IsBanned  bool      `firestore:"is_banned"`
 }
 
-func NewClient(ctx context.Context, serviceAccountPath string) (*Client, error) {
+func NewClient(ctx context.Context, serviceAccountPath string, apiKey string) (*Client, error) {
 	sa := option.WithCredentialsFile(serviceAccountPath)
 	app, err := firebase.NewApp(ctx, nil, sa)
 	if err != nil {
@@ -44,6 +45,7 @@ func NewClient(ctx context.Context, serviceAccountPath string) (*Client, error) 
 	return &Client{
 		Auth:      authClient,
 		Firestore: firestoreClient,
+		APIKey:    apiKey,
 	}, nil
 }
 

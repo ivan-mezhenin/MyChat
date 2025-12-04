@@ -1,3 +1,4 @@
 firebase_options.dart
 backend/cmd/server/myChatAdminKey.json
 *.json
+*.DS_Store

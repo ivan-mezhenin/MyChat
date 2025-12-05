@@ -1,8 +1,7 @@
 // lib/screens/chats_screen.dart
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:my_chat/services/auth_service.dart';
 import 'package:my_chat/screens/authentication_screen.dart';
-import 'package:my_chat/screens/chat_detailed_screen.dart';
 
 class ChatsScreen extends StatefulWidget {
   final List<dynamic> chats;
@@ -21,59 +20,101 @@ class ChatsScreen extends StatefulWidget {
 }
 
 class _ChatsScreenState extends State<ChatsScreen> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final AuthService _authService = AuthService();
+  List<dynamic> _chats = [];
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _chats = widget.chats;
+    _loadChatsPeriodically();
+  }
+
+  void _loadChatsPeriodically() {
+    // Загружаем чаты каждые 30 секунд
+    Future.delayed(const Duration(seconds: 30), () {
+      if (mounted) {
+        _refreshChats();
+        _loadChatsPeriodically();
+      }
+    });
+  }
+
+  Future<void> _refreshChats() async {
+    final token = widget.authToken;
+    if (token.isEmpty) return;
+
+    final result = await _authService.getChats(token);
+    if (result['success'] == true && mounted) {
+      setState(() {
+        _chats = result['chats'];
+      });
+    }
+  }
 
   void _logout() async {
-    await _auth.signOut();
+    setState(() {
+      _isLoading = true;
+    });
+
+    await _authService.logout();
+
     if (!mounted) return;
-    Navigator.pushReplacement(
+    
+    Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (context) => const AuthenticationScreen()),
+      (route) => false,
     );
   }
 
-void _openChat(Map<String, dynamic> chat) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => ChatDetailScreen(
-        chatId: chat['id'],
-        chatName: chat['name'],
-        authToken: widget.authToken,
-      ),
-    ),
-  );
-}
+  void _openChat(Map<String, dynamic> chat) {
+    // TODO: Переход в конкретный чат
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Открываем чат: ${chat['name']}')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Мои чаты'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: _logout,
-            tooltip: 'Выйти',
-          ),
+          if (_isLoading)
+            const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: CircularProgressIndicator(),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.logout),
+              onPressed: _logout,
+              tooltip: 'Выйти',
+            ),
         ],
       ),
-      body: widget.chats.isEmpty
-          ? const Center(
-              child: Text(
-                'У вас пока нет чатов',
-                style: TextStyle(fontSize: 16, color: Colors.grey),
+      body: RefreshIndicator(
+        onRefresh: _refreshChats,
+        child: _chats.isEmpty
+            ? const Center(
+                child: Text(
+                  'У вас пока нет чатов',
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+              )
+            : ListView.builder(
+                itemCount: _chats.length,
+                itemBuilder: (context, index) {
+                  final chat = _chats[index];
+                  return _buildChatItem(chat);
+                },
               ),
-            )
-          : ListView.builder(
-              itemCount: widget.chats.length,
-              itemBuilder: (context, index) {
-                final chat = widget.chats[index];
-                return _buildChatItem(chat);
-              },
-            ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // TODO: В будущем - создание нового чата
+          // TODO: Создание нового чата
         },
         child: const Icon(Icons.add),
       ),
@@ -85,7 +126,7 @@ void _openChat(Map<String, dynamic> chat) {
       leading: CircleAvatar(
         backgroundColor: Colors.blue,
         child: Text(
-          chat['name'][0], // Первая буква названия чата
+          chat['name'][0],
           style: const TextStyle(color: Colors.white),
         ),
       ),

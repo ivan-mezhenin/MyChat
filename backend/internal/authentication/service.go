@@ -2,7 +2,11 @@ package authentication
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"time"
 
 	"MyChatServer/internal/database"
@@ -12,9 +16,29 @@ type Service struct {
 	db *database.Client
 }
 
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type LoginResponse struct {
+	Token string         `json:"token"`
+	User  UserResponse   `json:"user"`
+	Chats []ChatResponse `json:"chats"`
+}
+
+type FirebaseAuthResponse struct {
+	IDToken      string `json:"idToken"`
+	RefreshToken string `json:"refreshToken"`
+	ExpiresIn    string `json:"expiresIn"`
+	LocalID      string `json:"localId"`
+	Email        string `json:"email"`
+}
+
 type AuthResponse struct {
 	User  UserResponse   `json:"user"`
 	Chats []ChatResponse `json:"chats"`
+	Token string         `json:"token"`
 }
 
 type UserResponse struct {
@@ -33,6 +57,81 @@ type ChatResponse struct {
 
 func NewService(db *database.Client) *Service {
 	return &Service{db: db}
+}
+
+func (s *Service) FirebaseLogin(ctx context.Context, email, password string) (*FirebaseAuthResponse, error) {
+	url := fmt.Sprintf("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=%s", s.db.APIKey)
+
+	payload := map[string]interface{}{
+		"email":             email,
+		"password":          password,
+		"returnSecureToken": true,
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(payloadBytes)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call Firebase API: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %v", err)
+	}
+
+	if resp.StatusCode != 200 {
+		var errorResp struct {
+			Error struct {
+				Message string `json:"message"`
+				Code    int    `json:"code"`
+			} `json:"error"`
+		}
+		json.Unmarshal(body, &errorResp)
+		return nil, fmt.Errorf("firebase auth error: %s (code: %d)", errorResp.Error.Message, errorResp.Error.Code)
+	}
+
+	var authResp FirebaseAuthResponse
+	if err := json.Unmarshal(body, &authResp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %v", err)
+	}
+
+	return &authResp, nil
+}
+
+func (s *Service) Login(ctx context.Context, email, password string) (*AuthResponse, error) {
+	firebaseResponse, err := s.FirebaseLogin(ctx, email, password)
+	if err != nil {
+		return nil, fmt.Errorf("authentication failed: %v", err)
+	}
+
+	_, err = s.db.Auth.VerifyIDToken(ctx, firebaseResponse.IDToken)
+	if err != nil {
+		return nil, fmt.Errorf("token verification failed: %v", err)
+	}
+
+	user, err := s.getUserData(ctx, firebaseResponse.LocalID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user data: %v", err)
+	}
+
+	chats, err := s.getUserChats(ctx, firebaseResponse.LocalID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user chats: %v", err)
+	}
+
+	return &AuthResponse{
+		User:  user,
+		Chats: chats,
+		Token: firebaseResponse.IDToken,
+	}, nil
 }
 
 func (s *Service) VerifyAndGetChats(ctx context.Context, idToken string) (*AuthResponse, error) {

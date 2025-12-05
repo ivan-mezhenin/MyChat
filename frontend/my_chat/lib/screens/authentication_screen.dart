@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:my_chat/services/auth_service.dart';
 import 'package:my_chat/screens/chats_screen.dart';
 
 class AuthenticationScreen extends StatefulWidget {
@@ -14,12 +12,13 @@ class AuthenticationScreen extends StatefulWidget {
 class _AuthenticationScreenState extends State<AuthenticationScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-
-  bool _isLoading = false;
   
-  static const String baseUrl = 'http://localhost:8080';
+  final AuthService _authService = AuthService();
+  bool _isLoading = false;
+  bool _isLogin = true;
+  final TextEditingController _usernameController = TextEditingController();
 
-  void _authUser() async {
+  void _authenticate() async {
     final String email = _emailController.text.trim();
     final String password = _passwordController.text.trim();
 
@@ -28,62 +27,55 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
       return;
     }
 
-    if (!email.contains('@')) {
-      _showSnackBar('Введите корректный email');
-      return;
-    }
-
     setState(() {
       _isLoading = true;
     });
 
-    try {
-      UserCredential userCredential = await FirebaseAuth.instance
-      .signInWithEmailAndPassword(email: email, password: password);
-
-      String? idToken = await userCredential.user!.getIdToken();
-      if (idToken == null) {
-        throw Exception("Не удалось получить токен авторизации.");
+    Map<String, dynamic> result;
+    
+    if (_isLogin) {
+      // Логин
+      result = await _authService.login(email, password);
+    } else {
+      // Регистрация
+      final String username = _usernameController.text.trim();
+      if (username.isEmpty) {
+        _showSnackBar('Введите имя пользователя');
+        setState(() { _isLoading = false; });
+        return;
       }
-
-      final responseData = await _verifyTokenAndGetChats(idToken);
-
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ChatsScreen(
-            chats: responseData['chats'],
-            userUID: responseData['user']['uid'],
-            authToken: idToken,
-          ),
-        ),
-      );
+      result = await _authService.register(username, email, password);
     }
-    } on FirebaseAuthException catch (e) {
-      _showSnackBar('Ошибка Firebase: ${e.message}');
-    } catch (e) {
-      _showSnackBar('Ошибка: $e');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (result['success'] == true) {
+      if (_isLogin) {
+        // Переход на экран чатов
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ChatsScreen(
+                chats: result['chats'],
+                userUID: result['user']['uid'],
+                authToken: result['token'],
+              ),
+            ),
+          );
+        }
+      } else {
+        _showSnackBar('Регистрация успешна! Войдите в аккаунт.');
+        setState(() {
+          _isLogin = true;
+          _usernameController.clear();
+        });
+      }
+    } else {
+      _showSnackBar('Ошибка: ${result['error']}');
     }
-  }
-
-  Future<Map<String, dynamic>> _verifyTokenAndGetChats(String idToken) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/auth/initial-data'),
-      headers: {
-        'Authorization': 'Bearer $idToken',
-      },
-    );
-
-    if (response.statusCode != 200) {
-        throw Exception('Ошибка сервера: ${response.statusCode}');
-    } 
-
-      return json.decode(response.body);
   }
 
   void _showSnackBar(String message) {
@@ -99,21 +91,30 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Вход'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
+        title: Text(_isLogin ? 'Вход' : 'Регистрация'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: [            
+          children: [
+            if (!_isLogin) ...[
+              TextField(
+                controller: _usernameController,
+                decoration: const InputDecoration(
+                  labelText: 'Имя пользователя',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+            
             TextField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
               decoration: const InputDecoration(
                 labelText: 'Email',
-                hintText: 'Введите Вашу почту',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.email),
               ),
@@ -126,7 +127,6 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
               obscureText: true,
               decoration: const InputDecoration(
                 labelText: 'Пароль',
-                hintText: 'Введите пароль',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.lock),
               ),
@@ -138,26 +138,30 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
               width: double.infinity,
               height: 50,
               child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(),
-                    )
+                  ? const Center(child: CircularProgressIndicator())
                   : ElevatedButton(
-                    onPressed: _authUser,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: const Text(
-                        'Войти',
-                        style: TextStyle(fontSize: 16),
-                      ),
+                      onPressed: _authenticate,
+                      child: Text(_isLogin ? 'Войти' : 'Зарегистрироваться'),
                     ),
             ),
             
             const SizedBox(height: 20),
+            
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _isLogin = !_isLogin;
+                  if (_isLogin) {
+                    _usernameController.clear();
+                  }
+                });
+              },
+              child: Text(
+                _isLogin 
+                  ? 'Нет аккаунта? Зарегистрироваться'
+                  : 'Уже есть аккаунт? Войти',
+              ),
+            ),
           ],
         ),
       ),

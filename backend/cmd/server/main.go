@@ -17,7 +17,12 @@ import (
 func main() {
 	ctx := context.Background()
 
-	db, err := database.NewClient(ctx, "myChatAdminKey.json")
+	apiKey := os.Getenv("FIREBASE_API_KEY")
+	if apiKey == "" {
+		log.Fatal("FIREBASE_API_KEY environment variable is required")
+	}
+
+	db, err := database.NewClient(ctx, "myChatAdminKey.json", apiKey)
 	if err != nil {
 		log.Fatalf("Failed to initialize Firebase: %v", err)
 	}
@@ -38,6 +43,7 @@ func main() {
 	authService := authentication.NewService(db)
 	authHandler := authentication.NewHandler(authService)
 
+	e.POST("/api/auth/login", authHandler.LoginHandler)
 	e.GET("/api/auth/initial-data", authHandler.VerifyAndGetChatsHandler)
 
 	chatService := chat.NewService(db)

@@ -42,6 +42,7 @@ func (s *Server) HandleConnection(w http.ResponseWriter, r *http.Request) {
 	connection, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		http.Error(w, "Failed to upgrade to WebSocket", http.StatusBadRequest)
+		return
 	}
 	defer connection.Close()
 
@@ -145,4 +146,19 @@ func (s *Server) GetConnectedUsers() []string {
 	}
 
 	return users
+}
+
+func (s *Server) Stop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for chatID, cancel := range s.chatListeners {
+		cancel()
+		delete(s.chatListeners, chatID)
+	}
+
+	for userID, client := range s.clients {
+		client.Connection.Close()
+		delete(s.clients, userID)
+	}
 }

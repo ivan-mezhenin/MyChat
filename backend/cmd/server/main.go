@@ -9,6 +9,7 @@ import (
 	"MyChatServer/internal/chat"
 	"MyChatServer/internal/database"
 	"MyChatServer/internal/registration"
+	"MyChatServer/internal/websocket"
 
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
@@ -30,10 +31,17 @@ func main() {
 
 	log.Println("Firebase connected successfully!")
 
+	wsServer := websocket.NewServer(db)
+
 	e := echo.New()
 
 	e.Use(middleware.CORS())
 	e.Use(middleware.Logger())
+
+	e.GET("/ws", func(c echo.Context) error {
+		wsServer.HandleConnection(c.Response(), c.Request())
+		return nil
+	})
 
 	regService := registration.NewService(db)
 	regHandler := registration.NewHandler(regService)

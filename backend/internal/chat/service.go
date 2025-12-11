@@ -20,7 +20,6 @@ type MessageResponse struct {
 	SenderID  string    `json:"sender_id"`
 	Text      string    `json:"text"`
 	Timestamp time.Time `json:"timestamp"`
-	Type      int       `json:"type"`
 }
 
 func NewService(db *database.Client) *Service {
@@ -37,7 +36,7 @@ func (s *Service) GetMessages(ctx context.Context, chatID, userID string) ([]Mes
 		return nil, fmt.Errorf("access denied or chat not found")
 	}
 
-	docs, err := s.db.Firestore.Collection("messages").
+	docs, err := s.db.Firestore.Collection("chats").
 		Doc(chatID).
 		Collection("messages").
 		OrderBy("timestamp", firestore.Asc).
@@ -50,59 +49,17 @@ func (s *Service) GetMessages(ctx context.Context, chatID, userID string) ([]Mes
 	messages := make([]MessageResponse, len(docs))
 	for i, doc := range docs {
 		data := doc.Data()
+
 		messages[i] = MessageResponse{
 			ID:        doc.Ref.ID,
-			ChatID:    data["chatId"].(string),
-			SenderID:  data["senderId"].(string),
+			ChatID:    chatID,
+			SenderID:  data["sender_id"].(string),
 			Text:      data["text"].(string),
 			Timestamp: data["timestamp"].(time.Time),
-			Type:      int(data["type"].(int64)),
 		}
 	}
 
 	return messages, nil
-}
-
-func (s *Service) SendMessage(ctx context.Context, chatID, userID, text string) (*MessageResponse, error) {
-	isParticipant, err := s.isChatParticipant(ctx, chatID, userID)
-	if err != nil || !isParticipant {
-		return nil, fmt.Errorf("access denied or chat not found")
-	}
-
-	messageData := map[string]interface{}{
-		"chatId":    chatID,
-		"senderId":  userID,
-		"text":      text,
-		"timestamp": time.Now(),
-		"type":      0,
-	}
-
-	// Сохраняем сообщение
-	docRef, _, err := s.db.Firestore.Collection("messages").
-		Doc(chatID).
-		Collection("messages").
-		Add(ctx, messageData)
-
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = s.db.Firestore.Collection("chats").Doc(chatID).Update(ctx, []firestore.Update{
-		{Path: "last_message", Value: messageData},
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &MessageResponse{
-		ID:        docRef.ID,
-		ChatID:    chatID,
-		SenderID:  userID,
-		Text:      text,
-		Timestamp: messageData["timestamp"].(time.Time),
-		Type:      0,
-	}, nil
 }
 
 func (s *Service) isChatParticipant(ctx context.Context, chatID, userID string) (bool, error) {

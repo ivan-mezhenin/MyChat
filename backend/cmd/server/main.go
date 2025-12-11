@@ -45,26 +45,22 @@ func main() {
 
 	regService := registration.NewService(db)
 	regHandler := registration.NewHandler(regService)
-
 	e.POST("/api/auth/register", regHandler.RegisterHandler)
 
 	authService := authentication.NewService(db)
 	authHandler := authentication.NewHandler(authService)
-
 	e.POST("/api/auth/login", authHandler.LoginHandler)
 	e.GET("/api/auth/initial-data", authHandler.VerifyAndGetChatsHandler)
 
 	chatService := chat.NewService(db)
 	chatHandler := chat.NewHandler(chatService)
 	e.GET("/api/chats/:chatId/messages", chatHandler.GetMessages)
-	e.POST("/api/chats/:chatId/messages", chatHandler.SendMessage)
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	e.Start("0.0.0.0:8080")
-
 	log.Printf("Server starting on :%s", port)
+	e.Start("0.0.0.0:" + port)
 }

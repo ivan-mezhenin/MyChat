@@ -76,4 +76,41 @@ class AuthService {
       };
     }
   }
+
+  Future<Map<String, dynamic>> verifyToken(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/api/auth/initial-data'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return {
+          'success': true,
+          'user': data['user'],
+          'chats': data['chats'],
+          'token': token,  
+        };
+      } else if (response.statusCode == 401) {
+        return {
+          'success': false,
+          'error': 'Token expired or invalid',
+        };
+      } else {
+        return {
+          'success': false,
+          'error': 'Server error: ${response.statusCode}',
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Network error: $e',
+      };
+    }
+  }
 }

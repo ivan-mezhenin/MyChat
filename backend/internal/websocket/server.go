@@ -53,6 +53,9 @@ func (s *Server) HandleConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.Lock()
+	if oldClient, exists := s.clients[userUID]; exists {
+		oldClient.Connection.Close()
+	}
 	s.clients[userUID] = client
 	s.mu.Unlock()
 

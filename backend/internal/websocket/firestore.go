@@ -50,7 +50,7 @@ func (s *Server) listenToChatMessages(ctx context.Context, chatID string) {
 
 	query := s.db.Firestore.Collection("chats").Doc(chatID).
 		Collection("messages").
-		OrderBy("timestamp", firestore.Desc)
+		OrderBy("timestamp", firestore.Desc).Limit(1)
 
 	snapshot := query.Snapshots(ctx)
 

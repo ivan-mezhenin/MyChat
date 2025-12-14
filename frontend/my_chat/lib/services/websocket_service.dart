@@ -1,122 +1,84 @@
-// lib/services/websocket_service.dart
-import 'dart:async';
 import 'dart:convert';
+import 'dart:async';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:web_socket_channel/io.dart';
 
 class WebSocketService {
-  static WebSocketService? _instance;
+  Function(Map<String, dynamic> data)? onMessageSent;
+  static const String _baseUrl = 'ws://localhost:8080';
   WebSocketChannel? _channel;
-  String? _token;
-  String? _userId;
-  
-  // Callbacks для обработки событий
-  Function(Map<String, dynamic>)? onNewMessage;
-  Function(Map<String, dynamic>)? onUserTyping;
-  Function(Map<String, dynamic>)? onMessageRead;
-  
-  // Поток для прослушивания сообщений
-  Stream<Map<String, dynamic>>? get stream => 
-      _channel?.stream.map((data) => json.decode(data) as Map<String, dynamic>);
+  StreamController<Map<String, dynamic>> _messageController =
+StreamController<Map<String, dynamic>>.broadcast();
+  StreamController<Map<String, dynamic>> _typingController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  StreamController<Map<String, dynamic>> _readController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
-  WebSocketService._internal();
+  Function(Map<String, dynamic> message)? onNewMessage;
+  Function(Map<String, dynamic> data)? onUserTyping;
+  Function(Map<String, dynamic> data)? onMessageRead;
 
-  factory WebSocketService() {
-    _instance ??= WebSocketService._internal();
-    return _instance!;
-  }
-
-  // Подключение к WebSocket серверу
-  Future<void> connect(String token, String userId, {String baseUrl = 'ws://localhost:8080'}) async {
-    if (_channel != null && _channel!.closeCode == null) {
-      await disconnect();
-    }
-
-    _token = token;
-    _userId = userId;
-    
-    final wsUrl = Uri.parse('$baseUrl/ws?token=$token');
-    
+  Future<void> connect(String token) async {
     try {
-      _channel = IOWebSocketChannel.connect(wsUrl);
-      
-      // Начинаем слушать сообщения
-      _listenToMessages();
-      
-      print('WebSocket connected successfully');
+      final url = '$_baseUrl/ws?token=$token';
+      _channel = WebSocketChannel.connect(Uri.parse(url));
+
+      _channel!.stream.listen(
+        (message) {
+          _handleMessage(message);
+        },
+        onError: (error) {
+          print('WebSocket error: $error');
+          _reconnect(token);
+        },
+        onDone: () {
+          print('WebSocket disconnected');
+          _reconnect(token);
+        },
+      );
+
+      print('WebSocket connected');
     } catch (e) {
-      print('WebSocket connection error: $e');
-      throw Exception('Failed to connect to WebSocket: $e');
+      print('Failed to connect WebSocket: $e');
     }
   }
 
-  // Отключение от сервера
-  Future<void> disconnect() async {
-    if (_channel != null) {
-      await _channel!.sink.close();
-      _channel = null;
-      print('WebSocket disconnected');
-    }
-  }
+  void _handleMessage(dynamic message) {
+    try {
+      final data = json.decode(message);
+      final type = data['type'];
 
-  // Прослушивание входящих сообщений
-  void _listenToMessages() {
-    _channel?.stream.listen(
-      (dynamic message) {
-        try {
-          final data = json.decode(message) as Map<String, dynamic>;
-          _handleIncomingEvent(data);
-        } catch (e) {
-          print('Error parsing WebSocket message: $e');
-        }
-      },
-      onError: (error) {
-        print('WebSocket error: $error');
-      },
-      onDone: () {
-        print('WebSocket connection closed');
-        _channel = null;
-      },
-    );
-  }
-
-  // Обработка входящих событий
-  void _handleIncomingEvent(Map<String, dynamic> event) {
-    final type = event['type'] as String?;
-    
-    switch (type) {
-      case 'new_message':
-        onNewMessage?.call(event);
-        break;
-        
-      case 'user_typing':
-        onUserTyping?.call(event);
-        break;
-        
+      switch (type) {
+        case 'new_message':
+          onNewMessage?.call(Map<String, dynamic>.from(data['data']));
+          _messageController.add(Map<String, dynamic>.from(data['data']));
+          break;
+        case 'user_typing':
+          onUserTyping?.call(Map<String, dynamic>.from(data['data']));
+          _typingController.add(Map<String, dynamic>.from(data['data']));
+          break;
       case 'message_sent':
-        // Подтверждение отправки сообщения
-        print('Message sent confirmation: $event');
+        print('Message sent: ${data['data']}');
+        onMessageSent?.call(Map<String, dynamic>.from(data['data']));
         break;
-        
-      case 'error':
-        print('WebSocket error: ${event['data']}');
-        break;
-        
-      default:
-        print('Unknown WebSocket event: $event');
+        case 'error':
+          print('WebSocket error: ${data['data']}');
+          break;
+        default:
+          print('Unknown message type: $type');
+      }
+    } catch (e) {
+      print('Error parsing WebSocket message: $e');
     }
   }
 
-  // Отправка сообщения через WebSocket
-  void sendMessage(String chatId, String text) {
-    if (_channel == null || _channel!.closeCode != null) {
-      throw Exception('WebSocket is not connected');
-    }
+  void sendMessage({
+    required String chatId,
+    required String text,
+  }) {
+    if (_channel == null) return;
 
     final message = {
       'type': 'send_message',
-      'chat_id': chatId,
-      'user_id': _userId,
       'data': {
         'chat_id': chatId,
         'text': text,
@@ -126,47 +88,57 @@ class WebSocketService {
     _channel!.sink.add(json.encode(message));
   }
 
-  // Отправка события "печатает"
-  void sendTypingEvent(String chatId, bool isTyping) {
-    if (_channel == null || _channel!.closeCode != null) return;
+  void sendTypingStatus({
+    required String chatId,
+    required bool isTyping,
+  }) {
+    if (_channel == null) return;
 
-    final event = {
+    final message = {
       'type': 'typing',
-      'chat_id': chatId,
-      'user_id': _userId,
       'data': {
         'chat_id': chatId,
         'is_typing': isTyping,
       },
     };
 
-    _channel!.sink.add(json.encode(event));
+    _channel!.sink.add(json.encode(message));
   }
 
-  // Отметить сообщение как прочитанное
-  void markMessageAsRead(String chatId, String messageId) {
-    if (_channel == null || _channel!.closeCode != null) return;
+  void markMessageAsRead({
+    required String chatId,
+    required String messageId,
+  }) {
+    if (_channel == null) return;
 
-    final event = {
+    final message = {
       'type': 'message_read',
-      'chat_id': chatId,
-      'user_id': _userId,
       'data': {
         'chat_id': chatId,
         'message_id': messageId,
       },
     };
 
-    _channel!.sink.add(json.encode(event));
+    _channel!.sink.add(json.encode(message));
   }
 
-  // Проверка подключения
-  bool get isConnected => _channel != null && _channel!.closeCode == null;
+  void _reconnect(String token) async {
+    await Future.delayed(const Duration(seconds: 3));
+    connect(token);
+  }
 
-  // Переподключение при необходимости
-  Future<void> reconnect() async {
-    if (_token != null && _userId != null && !isConnected) {
-      await connect(_token!, _userId!);
-    }
+  Stream<Map<String, dynamic>> get messageStream => _messageController.stream;
+  Stream<Map<String, dynamic>> get typingStream => _typingController.stream;
+  Stream<Map<String, dynamic>> get readStream => _readController.stream;
+
+  void disconnect() {
+    _channel?.sink.close();
+    _messageController.close();
+    _typingController.close();
+    _readController.close();
+  }
+
+  bool isConnected() {
+    return _channel != null;
   }
 }

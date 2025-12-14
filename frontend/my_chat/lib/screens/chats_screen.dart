@@ -1,171 +1,179 @@
-// lib/screens/chats_screen.dart
 import 'package:flutter/material.dart';
-import 'package:my_chat/services/auth_service.dart';
-import 'package:my_chat/screens/authentication_screen.dart';
+import 'package:my_chat/services/chat_service.dart';
+import 'package:my_chat/services/websocket_service.dart';
+import 'package:my_chat/screens/chat_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ChatsScreen extends StatefulWidget {
   final List<dynamic> chats;
   final String userUID;
-  final String authToken;
 
   const ChatsScreen({
-    super.key,
+    Key? key,
     required this.chats,
     required this.userUID,
-    required this.authToken,
-  });
+  }) : super(key: key);
 
   @override
   State<ChatsScreen> createState() => _ChatsScreenState();
 }
 
 class _ChatsScreenState extends State<ChatsScreen> {
-  final AuthService _authService = AuthService();
+  final ChatService _chatService = ChatService();
+  final WebSocketService _webSocketService = WebSocketService();
   List<dynamic> _chats = [];
-  bool _isLoading = false;
+  String? _authToken;
 
   @override
   void initState() {
     super.initState();
     _chats = widget.chats;
-    _loadChatsPeriodically();
+    _loadTokenAndConnect();
+    _setupWebSocketListeners();
   }
 
-  void _loadChatsPeriodically() {
-    // Загружаем чаты каждые 30 секунд
-    Future.delayed(const Duration(seconds: 30), () {
-      if (mounted) {
-        _refreshChats();
-        _loadChatsPeriodically();
+  Future<void> _loadTokenAndConnect() async {
+    final prefs = await SharedPreferences.getInstance();
+    _authToken = prefs.getString('auth_token');
+    
+    if (_authToken != null) {
+      await _webSocketService.connect(_authToken!);
+      _loadInitialData();
+    }
+  }
+
+  void _setupWebSocketListeners() {
+    _webSocketService.onNewMessage = (message) {
+      _updateChatLastMessage(message);
+    };
+  }
+
+  void _updateChatLastMessage(Map<String, dynamic> message) {
+    final chatId = message['chat_id'];
+    final text = message['text'];
+    final timestamp = DateTime.parse(message['timestamp']);
+    
+    setState(() {
+      for (var chat in _chats) {
+        if (chat['id'] == chatId) {
+          chat['last_message'] = text;
+          chat['last_message_time'] = timestamp;
+          break;
+        }
       }
     });
   }
 
-  Future<void> _refreshChats() async {
-    final token = widget.authToken;
-    if (token.isEmpty) return;
+  Future<void> _exitFromAccount() async {
+    if (_authToken == null) return;
 
-    final result = await _authService.getChats(token);
-    if (result['success'] == true && mounted) {
-      setState(() {
-        _chats = result['chats'];
-      });
+    try {
+      final data = await _chatService.getInitialData(_authToken!);
+      if (data['success'] == true) {
+        setState(() {
+          _chats = data['chats'];
+        });
+      }
+    } catch (e) {
+      print('Error loading chats: $e');
     }
   }
 
-  void _logout() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    await _authService.logout();
-
-    if (!mounted) return;
-    
-    Navigator.pushAndRemoveUntil(
+  void _navigateToChat(Map<String, dynamic> chat) {
+    Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const AuthenticationScreen()),
-      (route) => false,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          chatId: chat['id'],
+          chatName: chat['name'],
+          userUID: widget.userUID,
+          webSocketService: _webSocketService,
+        ),
+      ),
     );
   }
 
-  void _openChat(Map<String, dynamic> chat) {
-    // TODO: Переход в конкретный чат
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Открываем чат: ${chat['name']}')),
-    );
+  String _formatTime(DateTime? time) {
+    if (time == null) return '';
+    
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final messageDate = DateTime(time.year, time.month, time.day);
+
+    if (messageDate == today) {
+      return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    } else if (messageDate == yesterday) {
+      return 'Вчера';
+    } else {
+      return '${time.day.toString().padLeft(2, '0')}.${time.month.toString().padLeft(2, '0')}';
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Мои чаты'),
+        title: const Text('Чаты'),
         actions: [
-          if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.all(8.0),
-              child: CircularProgressIndicator(),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.logout),
-              onPressed: _logout,
-              tooltip: 'Выйти',
-            ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _exitFromAccount,
+          ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _refreshChats,
-        child: _chats.isEmpty
-            ? const Center(
-                child: Text(
-                  'У вас пока нет чатов',
-                  style: TextStyle(fontSize: 16, color: Colors.grey),
-                ),
-              )
-            : ListView.builder(
-                itemCount: _chats.length,
-                itemBuilder: (context, index) {
-                  final chat = _chats[index];
-                  return _buildChatItem(chat);
-                },
+      body: _chats.isEmpty
+          ? const Center(
+              child: Text(
+                'У вас пока нет чатов',
+                style: TextStyle(fontSize: 18, color: Colors.grey),
               ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // TODO: Создание нового чата
-        },
-        child: const Icon(Icons.add),
-      ),
+            )
+          : ListView.builder(
+              itemCount: _chats.length,
+              itemBuilder: (context, index) {
+                final chat = _chats[index];
+                final lastMessage = chat['last_message']?.toString() ?? '';
+                final lastMessageTime = chat['last_message_time'] != null
+                    ? DateTime.parse(chat['last_message_time'].toString())
+                    : null;
+
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.blue,
+                    child: Text(
+                      chat['name']?.toString().substring(0, 1).toUpperCase() ?? 'C',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                  title: Text(
+                    chat['name']?.toString() ?? 'Чат',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    lastMessage.isNotEmpty ? lastMessage : 'Нет сообщений',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: lastMessageTime != null
+                      ? Text(
+                          _formatTime(lastMessageTime),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        )
+                      : null,
+                  onTap: () => _navigateToChat(chat),
+                );
+              },
+            ),
     );
   }
 
-  Widget _buildChatItem(Map<String, dynamic> chat) {
-    return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: Colors.blue,
-        child: Text(
-          chat['name'][0],
-          style: const TextStyle(color: Colors.white),
-        ),
-      ),
-      title: Text(
-        chat['name'] ?? 'Без названия',
-        style: const TextStyle(fontWeight: FontWeight.w500),
-      ),
-      subtitle: chat['last_message'] != null
-          ? Text(
-              chat['last_message']!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            )
-          : const Text('Нет сообщений'),
-      trailing: chat['last_message_time'] != null
-          ? Text(
-              _formatTime(chat['last_message_time']!),
-              style: const TextStyle(color: Colors.grey, fontSize: 12),
-            )
-          : null,
-      onTap: () => _openChat(chat),
-    );
-  }
-
-  String _formatTime(String timeString) {
-    try {
-      final time = DateTime.parse(timeString);
-      final now = DateTime.now();
-      final difference = now.difference(time);
-
-      if (difference.inDays == 0) {
-        return '${time.hour}:${time.minute.toString().padLeft(2, '0')}';
-      } else if (difference.inDays == 1) {
-        return 'Вчера';
-      } else {
-        return '${time.day}.${time.month}';
-      }
-    } catch (e) {
-      return '';
-    }
+  @override
+  void dispose() {
+    _webSocketService.disconnect();
+    super.dispose();
   }
 }

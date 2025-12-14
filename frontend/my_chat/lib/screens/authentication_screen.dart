@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:my_chat/services/auth_service.dart';
 import 'package:my_chat/screens/chats_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthenticationScreen extends StatefulWidget {
   const AuthenticationScreen({super.key});
@@ -18,6 +19,11 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
   bool _isLogin = true;
   final TextEditingController _usernameController = TextEditingController();
 
+  Future<void> _saveToken(String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('auth_token', token);
+  }
+
   void _authenticate() async {
     final String email = _emailController.text.trim();
     final String password = _passwordController.text.trim();
@@ -34,10 +40,8 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
     Map<String, dynamic> result;
     
     if (_isLogin) {
-      // Логин
       result = await _authService.login(email, password);
     } else {
-      // Регистрация
       final String username = _usernameController.text.trim();
       if (username.isEmpty) {
         _showSnackBar('Введите имя пользователя');
@@ -53,7 +57,10 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
 
     if (result['success'] == true) {
       if (_isLogin) {
-        // Переход на экран чатов
+        if (result['token'] != null) {
+          await _saveToken(result['token']);
+        }
+        
         if (mounted) {
           Navigator.pushReplacement(
             context,
@@ -61,7 +68,6 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
               builder: (context) => ChatsScreen(
                 chats: result['chats'],
                 userUID: result['user']['uid'],
-                authToken: result['token'],
               ),
             ),
           );
@@ -137,12 +143,10 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
             SizedBox(
               width: double.infinity,
               height: 50,
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : ElevatedButton(
-                      onPressed: _authenticate,
-                      child: Text(_isLogin ? 'Войти' : 'Зарегистрироваться'),
-                    ),
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _authenticate, // Просто блокируем кнопку
+                child: Text(_isLogin ? 'Войти' : 'Зарегистрироваться'),
+              ),
             ),
             
             const SizedBox(height: 20),

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:my_chat/screens/authentication_screen.dart';
+import 'package:my_chat/screens/chats_screen.dart';
+import 'package:my_chat/services/auth_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
@@ -32,9 +34,7 @@ class AuthWrapper extends StatefulWidget {
 
 class _AuthWrapperState extends State<AuthWrapper> {
   bool _isLoading = true;
-  bool _isAuthenticated = false;
-  String? _token;
-  String? _userUID;
+  Map<String, dynamic>? _authData;
 
   @override
   void initState() {
@@ -46,15 +46,25 @@ class _AuthWrapperState extends State<AuthWrapper> {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
     
-    if (token != null) {
+    if (token == null) {
       setState(() {
-      _token = token;
-      _isAuthenticated = true;
-      _isLoading = false;  
+        _isLoading = false;
+      });
+      return;
+    }
+
+    final authService = AuthService();
+    final result = await authService.verifyToken(token);
+    
+    if (result['success'] == true) {
+      setState(() {
+        _authData = result;
+        _isLoading = false;
       });
     } else {
+      await prefs.remove('auth_token');
       setState(() {
-        _isAuthenticated = false;
+        _authData = null;
         _isLoading = false;
       });
     }
@@ -70,6 +80,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
       );
     }
 
+    if (_authData != null && _authData!['user'] != null) {
+      return ChatsScreen(
+        chats: _authData!['chats'] ?? [],
+        userUID: _authData!['user']['uid'],
+      );
+    }
+    
     return const AuthenticationScreen();
   }
 }

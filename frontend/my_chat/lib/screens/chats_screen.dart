@@ -64,7 +64,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
     });
   }
 
-  Future<void> _exitFromAccount() async {
+  Future<void> _loadInitialData() async {
     if (_authToken == null) return;
 
     try {
@@ -118,7 +118,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _exitFromAccount,
+            onPressed: _loadInitialData,
           ),
         ],
       ),

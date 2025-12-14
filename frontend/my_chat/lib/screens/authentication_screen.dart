@@ -37,50 +37,67 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
       _isLoading = true;
     });
 
-    Map<String, dynamic> result;
-    
-    if (_isLogin) {
-      result = await _authService.login(email, password);
-    } else {
-      final String username = _usernameController.text.trim();
-      if (username.isEmpty) {
-        _showSnackBar('Введите имя пользователя');
-        setState(() { _isLoading = false; });
-        return;
-      }
-      result = await _authService.register(username, email, password);
-    }
-
-    setState(() {
-      _isLoading = false;
-    });
-
-    if (result['success'] == true) {
+    try {
       if (_isLogin) {
-        if (result['token'] != null) {
-          await _saveToken(result['token']);
-        }
+        final apiResponse = await _authService.login(email, password);
         
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ChatsScreen(
-                chats: result['chats'],
-                userUID: result['user']['uid'],
+        setState(() {
+          _isLoading = false;
+        });
+
+        if (apiResponse.success == true) {
+          final loginResponse = apiResponse.data!;
+          
+          await _saveToken(loginResponse.token);
+          
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ChatsScreen(
+                  chats: loginResponse.chats, // ← доступ через loginResponse.chats
+                  userUID: loginResponse.user.uid, // ← доступ через loginResponse.user.uid
+                ),
               ),
-            ),
-          );
+            );
+          }
+        } else {
+          _showSnackBar('Ошибка: ${apiResponse.error}');
         }
       } else {
-        _showSnackBar('Регистрация успешна! Войдите в аккаунт.');
+        final String username = _usernameController.text.trim();
+        if (username.isEmpty) {
+          _showSnackBar('Введите имя пользователя');
+          setState(() { _isLoading = false; });
+          return;
+        }
+        
+        // register() возвращает ApiResponse<String>
+        final apiResponse = await _authService.register(
+          username: username,
+          email: email,
+          password: password,
+        );
+        
         setState(() {
-          _isLogin = true;
-          _usernameController.clear();
+          _isLoading = false;
         });
+
+        if (apiResponse.success == true) {
+          _showSnackBar('Регистрация успешна! Войдите в аккаунт.');
+          setState(() {
+            _isLogin = true;
+            _usernameController.clear();
+          });
+        } else {
+          _showSnackBar('Ошибка: ${apiResponse.error}');
+        }
       }
-    } else {
-      _showSnackBar('Ошибка: ${result['error']}');
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      _showSnackBar('Ошибка сети: $e');
     }
   }
 
@@ -144,7 +161,7 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                onPressed: _isLoading ? null : _authenticate, // Просто блокируем кнопку
+                onPressed: _isLoading ? null : _authenticate,
                 child: Text(_isLogin ? 'Войти' : 'Зарегистрироваться'),
               ),
             ),

@@ -124,7 +124,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
     _setTypingStatus(false);
 
-    // Отправляем через WebSocket
     widget.webSocketService.sendMessage(
       chatId: widget.chatId,
       text: text,

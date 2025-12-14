@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"cloud.google.com/go/firestore"
 )
@@ -59,6 +60,24 @@ func (s *Server) handleSendMessage(userID string, event WSEvent) {
 			"chat_id":    chatID,
 		},
 	})
+
+	messageData := map[string]interface{}{
+		"id":        messageID,
+		"chat_id":   chatID,
+		"sender_id": userID,
+		"text":      text,
+		"timestamp": time.Now(),
+	}
+
+	broadcastEvent := WSEvent{
+		Type:   "new_message",
+		ChatID: chatID,
+		Data:   messageData,
+	}
+
+	// Рассылаем всем кроме отправителя
+	s.BroadcastToChat(chatID, broadcastEvent, userID)
+
 }
 
 func (s *Server) saveMessageToFirestore(chatID, userID, text string) (string, error) {

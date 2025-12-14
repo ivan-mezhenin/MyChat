@@ -22,7 +22,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
   final ChatService _chatService = ChatService();
   final WebSocketService _webSocketService = WebSocketService();
   List<dynamic> _chats = [];
-  bool _isLoading = false;
   String? _authToken;
 
   @override
@@ -65,12 +64,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
     });
   }
 
-  Future<void> _loadInitialData() async {
+  Future<void> _exitFromAccount() async {
     if (_authToken == null) return;
-    
-    setState(() {
-      _isLoading = true;
-    });
 
     try {
       final data = await _chatService.getInitialData(_authToken!);
@@ -81,10 +76,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
       }
     } catch (e) {
       print('Error loading chats: $e');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
     }
   }
 
@@ -127,58 +118,56 @@ class _ChatsScreenState extends State<ChatsScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadInitialData,
+            onPressed: _exitFromAccount,
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _chats.isEmpty
-              ? const Center(
-                  child: Text(
-                    'У вас пока нет чатов',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: _chats.length,
-                  itemBuilder: (context, index) {
-                    final chat = _chats[index];
-                    final lastMessage = chat['last_message']?.toString() ?? '';
-                    final lastMessageTime = chat['last_message_time'] != null
-                        ? DateTime.parse(chat['last_message_time'].toString())
-                        : null;
+      body: _chats.isEmpty
+          ? const Center(
+              child: Text(
+                'У вас пока нет чатов',
+                style: TextStyle(fontSize: 18, color: Colors.grey),
+              ),
+            )
+          : ListView.builder(
+              itemCount: _chats.length,
+              itemBuilder: (context, index) {
+                final chat = _chats[index];
+                final lastMessage = chat['last_message']?.toString() ?? '';
+                final lastMessageTime = chat['last_message_time'] != null
+                    ? DateTime.parse(chat['last_message_time'].toString())
+                    : null;
 
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Colors.blue,
-                        child: Text(
-                          chat['name']?.toString().substring(0, 1).toUpperCase() ?? 'C',
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                      ),
-                      title: Text(
-                        chat['name']?.toString() ?? 'Чат',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Text(
-                        lastMessage.isNotEmpty ? lastMessage : 'Нет сообщений',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: lastMessageTime != null
-                          ? Text(
-                              _formatTime(lastMessageTime),
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
-                            )
-                          : null,
-                      onTap: () => _navigateToChat(chat),
-                    );
-                  },
-                ),
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.blue,
+                    child: Text(
+                      chat['name']?.toString().substring(0, 1).toUpperCase() ?? 'C',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                  title: Text(
+                    chat['name']?.toString() ?? 'Чат',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    lastMessage.isNotEmpty ? lastMessage : 'Нет сообщений',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: lastMessageTime != null
+                      ? Text(
+                          _formatTime(lastMessageTime),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        )
+                      : null,
+                  onTap: () => _navigateToChat(chat),
+                );
+              },
+            ),
     );
   }
 

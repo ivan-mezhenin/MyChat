@@ -33,60 +33,51 @@ class AuthWrapper extends StatefulWidget {
 }
 
 class _AuthWrapperState extends State<AuthWrapper> {
-  bool _isLoading = true;
-  Map<String, dynamic>? _authData;
+  Widget? _screen;
 
   @override
   void initState() {
     super.initState();
-    _checkAuthStatus();
+    _determineScreen();
   }
 
-  Future<void> _checkAuthStatus() async {
+  Future<void> _determineScreen() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
     
-    if (token == null) {
-      setState(() {
-        _isLoading = false;
-      });
-      return;
-    }
-
-    final authService = AuthService();
-    final result = await authService.verifyToken(token);
+    Widget screen;
     
-    if (result['success'] == true) {
-      setState(() {
-        _authData = result;
-        _isLoading = false;
-      });
+    if (token == null) {
+      screen = const AuthenticationScreen();
     } else {
-      await prefs.remove('auth_token');
+      try {
+        final authService = AuthService();
+        final result = await authService.verifyToken(token);
+        
+        if (result['success'] == true) {
+          screen = ChatsScreen(
+            chats: result['chats'] ?? [],
+            userUID: result['user']['uid'],
+          );
+        } else {
+          await prefs.remove('auth_token');
+          screen = const AuthenticationScreen();
+        }
+      } catch (e) {
+        screen = const AuthenticationScreen();
+      }
+    }
+    
+    if (mounted) {
       setState(() {
-        _authData = null;
-        _isLoading = false;
+        _screen = screen;
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
-    if (_authData != null && _authData!['user'] != null) {
-      return ChatsScreen(
-        chats: _authData!['chats'] ?? [],
-        userUID: _authData!['user']['uid'],
-      );
-    }
-    
-    return const AuthenticationScreen();
+    // Пока не определили экран - ПУСТОТА
+    return _screen ?? const SizedBox.shrink();
   }
 }

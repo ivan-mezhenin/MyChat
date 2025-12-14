@@ -26,7 +26,6 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   
   List<Map<String, dynamic>> _messages = [];
-  bool _isLoading = false;
   bool _isTyping = false;
   Map<String, bool> _userTyping = {};
 
@@ -52,38 +51,31 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     };
 
-      widget.webSocketService.onMessageSent = (data) {
-    if (data['chat_id'] == widget.chatId) {
-      _handleMessageSent(data['message_id']);
-    }
-  };
-    
+    widget.webSocketService.onMessageSent = (data) {
+      if (data['chat_id'] == widget.chatId) {
+        _handleMessageSent(data['message_id']);
+      }
+    };
   }
 
   void _handleMessageSent(String messageId) {
-  setState(() {
-    // Находим временное сообщение по ID чата и обновляем его
-    for (int i = _messages.length - 1; i >= 0; i--) {
-      final message = _messages[i];
-      if (message['is_sending'] == true && 
-          message['chat_id'] == widget.chatId) {
-        // Обновляем ID на настоящий и убираем индикатор
-        _messages[i] = {
-          ...message,
-          'id': messageId,
-          'is_sending': false,
-        };
-        break;
+    setState(() {
+      for (int i = _messages.length - 1; i >= 0; i--) {
+        final message = _messages[i];
+        if (message['is_sending'] == true && 
+            message['chat_id'] == widget.chatId) {
+          _messages[i] = {
+            ...message,
+            'id': messageId,
+            'is_sending': false,
+          };
+          break;
+        }
       }
-    }
-  });
-}
+    });
+  }
 
   Future<void> _loadMessages() async {
-    setState(() {
-      _isLoading = true;
-    });
-
     try {
       final messages = await _chatService.getMessages(widget.chatId);
       if (messages['success'] == true) {
@@ -94,10 +86,6 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } catch (e) {
       print('Error loading messages: $e');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
     }
   }
 
@@ -107,7 +95,6 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     _scrollToBottom();
     
-    // Отправляем подтверждение о прочтении
     widget.webSocketService.markMessageAsRead(
       chatId: widget.chatId,
       messageId: message['id'],
@@ -118,7 +105,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
-      final tempId = DateTime.now().millisecondsSinceEpoch.toString();
+    final tempId = DateTime.now().millisecondsSinceEpoch.toString();
     final tempMessage = {
       'id': 'temp_${DateTime.now().millisecondsSinceEpoch}',
       'temp_id': tempId,
@@ -135,16 +122,13 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     _scrollToBottom();
 
-     _setTypingStatus(false);
+    _setTypingStatus(false);
 
     // Отправляем через WebSocket
     widget.webSocketService.sendMessage(
       chatId: widget.chatId,
       text: text,
     );
-
-    // Убираем типинг статус
-    _setTypingStatus(false);
   }
 
   void _setTypingStatus(bool isTyping) {
@@ -156,8 +140,6 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
   }
-
-  
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -181,74 +163,74 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildMessageBubble(Map<String, dynamic> message) {
-  final isMe = message['sender_id'] == widget.userUID;
-  final isSending = message['is_sending'] == true;
-  final isTemp = message['id']?.toString().startsWith('temp_') ?? false;
+    final isMe = message['sender_id'] == widget.userUID;
+    final isSending = message['is_sending'] == true;
+    final isTemp = message['id']?.toString().startsWith('temp_') ?? false;
 
-  return Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4.0),
-    child: Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.7,
-        ),
-        child: Container(
-          padding: const EdgeInsets.all(12.0),
-          decoration: BoxDecoration(
-            color: isMe 
-              ? (isSending ? Colors.blue[300] : Colors.blue) 
-              : Colors.grey[200],
-            borderRadius: BorderRadius.circular(16.0),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Align(
+        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.7,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                message['text'] ?? '',
-                style: TextStyle(
-                  color: isMe ? Colors.white : Colors.black,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _formatMessageTime(message['timestamp'] ?? ''),
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: isMe ? Colors.white70 : Colors.grey[600],
-                    ),
+          child: Container(
+            padding: const EdgeInsets.all(12.0),
+            decoration: BoxDecoration(
+              color: isMe 
+                ? (isSending ? Colors.blue[300] : Colors.blue) 
+                : Colors.grey[200],
+              borderRadius: BorderRadius.circular(16.0),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  message['text'] ?? '',
+                  style: TextStyle(
+                    color: isMe ? Colors.white : Colors.black,
                   ),
-                  if (isSending) ...[
-                    const SizedBox(width: 4),
-                    SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _formatMessageTime(message['timestamp'] ?? ''),
+                      style: TextStyle(
+                        fontSize: 10,
                         color: isMe ? Colors.white70 : Colors.grey[600],
                       ),
                     ),
+                    if (isSending) ...[
+                      const SizedBox(width: 4),
+                      SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: isMe ? Colors.white70 : Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                    if (isTemp && !isSending) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.check,
+                        size: 12,
+                        color: isMe ? Colors.white70 : Colors.grey[600],
+                      ),
+                    ],
                   ],
-                  if (isTemp && !isSending) ...[
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.check,
-                      size: 12,
-                      color: isMe ? Colors.white70 : Colors.grey[600],
-                    ),
-                  ],
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildTypingIndicator() {
     final typingUsers = _userTyping.entries
@@ -324,26 +306,24 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _messages.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'Начните общение',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      )
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.all(16.0),
-                        itemCount: _messages.length + 1,
-                        itemBuilder: (context, index) {
-                          if (index == _messages.length) {
-                            return _buildTypingIndicator();
-                          }
-                          return _buildMessageBubble(_messages[index]);
-                        },
-                      ),
+            child: _messages.isEmpty
+                ? const Center(
+                    child: Text(
+                      'Начните общение',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(16.0),
+                    itemCount: _messages.length + 1,
+                    itemBuilder: (context, index) {
+                      if (index == _messages.length) {
+                        return _buildTypingIndicator();
+                      }
+                      return _buildMessageBubble(_messages[index]);
+                    },
+                  ),
           ),
           Padding(
             padding: const EdgeInsets.all(8.0),

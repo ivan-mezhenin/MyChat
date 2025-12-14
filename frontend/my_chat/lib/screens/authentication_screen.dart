@@ -143,12 +143,10 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
             SizedBox(
               width: double.infinity,
               height: 50,
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : ElevatedButton(
-                      onPressed: _authenticate,
-                      child: Text(_isLogin ? 'Войти' : 'Зарегистрироваться'),
-                    ),
+              child: ElevatedButton(
+                onPressed: _isLoading ? null : _authenticate, // Просто блокируем кнопку
+                child: Text(_isLogin ? 'Войти' : 'Зарегистрироваться'),
+              ),
             ),
             
             const SizedBox(height: 20),

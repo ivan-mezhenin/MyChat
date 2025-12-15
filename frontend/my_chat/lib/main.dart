@@ -57,8 +57,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
         if (apiResponse.success == true) {
           final result = apiResponse.data!;
           screen = ChatsScreen(
-            chats: result['chats'] ?? [],
-            userUID: result['user']['uid'],
+            chats: result.chats,
+            userUID: result.user.uid,
           );
         } else {
           await prefs.remove('auth_token');

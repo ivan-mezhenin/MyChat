@@ -2,12 +2,28 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import 'chat_service.dart';
+
 class ApiConfig {
-  static const String baseUrl = 'http://192.168.1.104:8080';
-  static const Duration requestTimeout = Duration(seconds: 10);
   static const Map<String, String> defaultHeaders = {
     'Content-Type': 'application/json',
   };
+
+  factory ApiConfig.development() => ApiConfig(
+        baseUrl: 'http://192.168.1.104:8080',
+      );
+
+  factory ApiConfig.production() => ApiConfig(
+        baseUrl: 'https://api.yourdomain.com',
+      );
+
+  const ApiConfig({
+    required this.baseUrl,
+    this.requestTimeout = const Duration(seconds: 10),
+  });
+
+  final String baseUrl;
+  final Duration requestTimeout;
 }
 
 class ApiResponse<T> {
@@ -52,12 +68,18 @@ class UserData {
         name: json['name'] as String,
         email: json['email'] as String,
       );
+
+  Map<String, dynamic> toJson() => {
+        'uid': uid,
+        'name': name,
+        'email': email,
+      };
 }
 
 class LoginResponse {
   final String token;
   final UserData user;
-  final List<dynamic> chats;
+  final List<Chat> chats;
 
   LoginResponse({
     required this.token,
@@ -68,23 +90,31 @@ class LoginResponse {
   factory LoginResponse.fromJson(Map<String, dynamic> json) => LoginResponse(
         token: json['token'] as String,
         user: UserData.fromJson(json['user'] as Map<String, dynamic>),
-        chats: json['chats'] as List<dynamic>,
+        chats: (json['chats'] as List<dynamic>)
+            .map((chatJson) => Chat.fromJson(chatJson as Map<String, dynamic>))
+            .toList(),
       );
 }
 
+class AuthServiceException implements Exception {
+  final String message;
+  final int? statusCode;
+
+  AuthServiceException(this.message, [this.statusCode]);
+
+  @override
+  String toString() => 'AuthServiceException: $message${statusCode != null ? ' ($statusCode)' : ''}';
+}
+
 class AuthService {
-  static final AuthService _instance = AuthService._internal();
-  factory AuthService() => _instance;
-  AuthService._internal();
+  final ApiConfig _config;
+  final http.Client _client;
 
-  static final Uri _loginUri = Uri.parse('${ApiConfig.baseUrl}/api/auth/login');
-  static final Uri _registerUri =
-      Uri.parse('${ApiConfig.baseUrl}/api/auth/register');
-  static final Uri _verifyTokenUri =
-      Uri.parse('${ApiConfig.baseUrl}/api/auth/initial-data');
-
-
-  final http.Client _client = http.Client();
+  AuthService({
+    ApiConfig? config,
+    http.Client? client,
+  })  : _config = config ?? ApiConfig.development(),
+        _client = client ?? http.Client();
 
   bool _isValidEmail(String email) {
     return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
@@ -94,40 +124,14 @@ class AuthService {
     return password.length >= 6;
   }
 
-  String _handleHttpError(int statusCode, String? errorMessage) {
-    switch (statusCode) {
-      case 400:
-        return errorMessage ?? 'Некорректный запрос';
-      case 401:
-        return 'Неверные учетные данные';
-      case 403:
-        return 'Доступ запрещен';
-      case 404:
-        return 'Ресурс не найден';
-      case 409:
-        return 'Пользователь уже существует';
-      case 500:
-        return 'Ошибка сервера';
-      default:
-        return errorMessage ?? 'Ошибка: $statusCode';
-    }
-  }
-
-  Map<String, dynamic>? _safeJsonDecode(String body) {
-    try {
-      return json.decode(body) as Map<String, dynamic>;
-    } catch (e) {
-      return null;
-    }
-  }
-
   Future<ApiResponse<Map<String, dynamic>>> _makeRequest(
-    Uri uri, {
+    String path, {
     String method = 'GET',
     Map<String, dynamic>? body,
     String? token,
   }) async {
     try {
+      final uri = Uri.parse('${_config.baseUrl}$path');
       final headers = {
         ...ApiConfig.defaultHeaders,
         if (token != null) 'Authorization': 'Bearer $token',
@@ -135,34 +139,72 @@ class AuthService {
 
       final request = http.Request(method, uri);
       request.headers.addAll(headers);
+      
       if (body != null) {
         request.body = json.encode(body);
       }
 
       final streamedResponse = await _client.send(request).timeout(
-            ApiConfig.requestTimeout,
+            _config.requestTimeout,
             onTimeout: () => throw TimeoutException('Request timeout'),
           );
 
       final response = await http.Response.fromStream(streamedResponse);
-      final responseBody = _safeJsonDecode(response.body);
+      
+      if (response.body.isEmpty) {
+        return ApiResponse.error(
+          'Empty response from server',
+          response.statusCode,
+        );
+      }
+
+      Map<String, dynamic>? responseBody;
+      try {
+        responseBody = json.decode(response.body) as Map<String, dynamic>;
+      } on FormatException {
+        return ApiResponse.error(
+          'Invalid JSON response',
+          response.statusCode,
+        );
+      }
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return ApiResponse.success(
-          responseBody ?? {},
+          responseBody,
           response.statusCode,
         );
       } else {
-        final errorMessage = responseBody?['error']?.toString() ??
-            _handleHttpError(response.statusCode, null);
+        final errorMessage = responseBody['error']?.toString() ??
+            _handleHttpError(response.statusCode);
         return ApiResponse.error(errorMessage, response.statusCode);
       }
     } on TimeoutException {
-      return ApiResponse.error('Превышено время ожидания');
-    } on FormatException {
-      return ApiResponse.error('Ошибка формата данных');
+      return ApiResponse.error('Request timeout');
+    } on http.ClientException catch (e) {
+      return ApiResponse.error('Network error: ${e.message}');
     } catch (e) {
-      return ApiResponse.error('Ошибка сети: ${e.toString()}');
+      return ApiResponse.error('Unexpected error: ${e.toString()}');
+    }
+  }
+
+  String _handleHttpError(int statusCode) {
+    switch (statusCode) {
+      case 400:
+        return 'Bad request';
+      case 401:
+        return 'Invalid credentials';
+      case 403:
+        return 'Access denied';
+      case 404:
+        return 'Resource not found';
+      case 409:
+        return 'User already exists';
+      case 422:
+        return 'Validation error';
+      case 500:
+        return 'Server error';
+      default:
+        return 'Error: $statusCode';
     }
   }
 
@@ -171,14 +213,15 @@ class AuthService {
     String password,
   ) async {
     if (!_isValidEmail(email)) {
-      return ApiResponse.error('Введите корректный email');
+      return ApiResponse.error('Please enter a valid email');
     }
+    
     if (!_isValidPassword(password)) {
-      return ApiResponse.error('Пароль должен содержать минимум 6 символов');
+      return ApiResponse.error('Password must be at least 6 characters');
     }
 
     final result = await _makeRequest(
-      _loginUri,
+      '/api/auth/login',
       method: 'POST',
       body: {'email': email, 'password': password},
     );
@@ -188,7 +231,7 @@ class AuthService {
         final loginResponse = LoginResponse.fromJson(result.data!);
         return ApiResponse.success(loginResponse, result.statusCode);
       } catch (e) {
-        return ApiResponse.error('Ошибка обработки ответа сервера');
+        return ApiResponse.error('Failed to parse server response');
       }
     } else {
       return ApiResponse.error(result.error!);
@@ -201,17 +244,19 @@ class AuthService {
     required String password,
   }) async {
     if (username.isEmpty) {
-      return ApiResponse.error('Введите имя пользователя');
+      return ApiResponse.error('Please enter username');
     }
+    
     if (!_isValidEmail(email)) {
-      return ApiResponse.error('Введите корректный email');
+      return ApiResponse.error('Please enter a valid email');
     }
+    
     if (!_isValidPassword(password)) {
-      return ApiResponse.error('Пароль должен содержать минимум 6 символов');
+      return ApiResponse.error('Password must be at least 6 characters');
     }
 
     final result = await _makeRequest(
-      _registerUri,
+      '/api/auth/register',
       method: 'POST',
       body: {
         'username': username,
@@ -221,32 +266,36 @@ class AuthService {
     );
 
     if (result.success) {
-      final message = result.data?['message']?.toString() ?? 'Регистрация успешна';
+      final message = result.data?['message']?.toString() ?? 'Registration successful';
       return ApiResponse.success(message, result.statusCode);
     } else {
       return ApiResponse.error(result.error!);
     }
   }
 
-  Future<ApiResponse<Map<String, dynamic>>> verifyToken(String token) async {
+  Future<ApiResponse<LoginResponse>> verifyToken(String token) async {
     if (token.length < 100) {
-      return ApiResponse.error('Невалидный токен');
+      return ApiResponse.error('Invalid token');
     }
 
     final result = await _makeRequest(
-      _verifyTokenUri,
+      '/api/auth/initial-data',
       method: 'GET',
       token: token,
     );
 
     if (result.success) {
-      final data = result.data!;
-      return ApiResponse.success({
-        'token': token,
-        'user': UserData.fromJson(data['user'] as Map<String, dynamic>),
-        'chats': data['chats'] as List<dynamic>,
-
-      }, result.statusCode);
+      try {
+        final data = {
+          ...result.data!,
+          'token': token,
+        };
+        
+        final loginResponse = LoginResponse.fromJson(data);
+        return ApiResponse.success(loginResponse, result.statusCode);
+      } catch (e) {
+        return ApiResponse.error('Failed to parse server response');
+      }
     } else {
       return ApiResponse.error(result.error!);
     }

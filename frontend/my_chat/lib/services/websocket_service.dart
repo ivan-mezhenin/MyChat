@@ -65,7 +65,6 @@ class WebSocketService {
   final StreamController<bool> _connectionController =
       StreamController<bool>.broadcast();
 
-  // Callbacks
   WebSocketMessageCallback? onNewMessage;
   WebSocketMessageCallback? onUserTyping;
   WebSocketMessageCallback? onMessageSent;

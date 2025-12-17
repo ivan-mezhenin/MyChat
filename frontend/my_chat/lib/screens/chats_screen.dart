@@ -3,42 +3,49 @@ import 'package:my_chat/services/chat_service.dart';
 import 'package:my_chat/services/websocket_service.dart';
 import 'package:my_chat/screens/chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:my_chat/screens/authentication_screen.dart';
 
 class ChatsScreen extends StatefulWidget {
-  final List<dynamic> chats;
+  final List<Chat> chats;
   final String userUID;
 
   const ChatsScreen({
-    Key? key,
+    super.key,
     required this.chats,
     required this.userUID,
-  }) : super(key: key);
+  });
 
   @override
   State<ChatsScreen> createState() => _ChatsScreenState();
 }
 
 class _ChatsScreenState extends State<ChatsScreen> {
-  final ChatService _chatService = ChatService();
+  late ChatService _chatService;
   final WebSocketService _webSocketService = WebSocketService();
-  List<dynamic> _chats = [];
+  List<Chat> _chats = [];
   String? _authToken;
 
   @override
   void initState() {
     super.initState();
     _chats = widget.chats;
-    _loadTokenAndConnect();
     _setupWebSocketListeners();
+    _initializeServices();
   }
 
-  Future<void> _loadTokenAndConnect() async {
-    final prefs = await SharedPreferences.getInstance();
-    _authToken = prefs.getString('auth_token');
-    
-    if (_authToken != null) {
-      await _webSocketService.connect(_authToken!);
-      _loadInitialData();
+  Future<void> _initializeServices() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _authToken = prefs.getString('auth_token');
+      
+      _chatService = ChatService(prefs: prefs);
+      
+      if (_authToken != null) {
+        await _webSocketService.connect(_authToken!);
+        await _loadInitialData();
+      }
+    } catch (e) {
+      debugPrint('Error initializing services: $e');
     }
   }
 
@@ -49,15 +56,23 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   void _updateChatLastMessage(Map<String, dynamic> message) {
-    final chatId = message['chat_id'];
-    final text = message['text'];
-    final timestamp = DateTime.parse(message['timestamp']);
+    if (!mounted) return;
+    
+    final chatId = message['chat_id'] as String;
+    final text = message['text'] as String;
+    final timestamp = DateTime.parse(message['timestamp'] as String);
     
     setState(() {
-      for (var chat in _chats) {
-        if (chat['id'] == chatId) {
-          chat['last_message'] = text;
-          chat['last_message_time'] = timestamp;
+      for (int i = 0; i < _chats.length; i++) {
+        final chat = _chats[i];
+        if (chat.id == chatId) {
+          _chats[i] = Chat(
+            id: chat.id,
+            name: chat.name,
+            lastMessage: text,
+            lastMessageTime: timestamp,
+            participantIds: chat.participantIds,
+          );
           break;
         }
       }
@@ -68,24 +83,83 @@ class _ChatsScreenState extends State<ChatsScreen> {
     if (_authToken == null) return;
 
     try {
-      final data = await _chatService.getInitialData(_authToken!);
-      if (data['success'] == true) {
+      final response = await _chatService.getInitialData();
+      if (response.success && mounted) {
+        final List<Chat> chats = response.data!;
         setState(() {
-          _chats = data['chats'];
+          _chats = chats;
         });
       }
     } catch (e) {
-      print('Error loading chats: $e');
+      debugPrint('Error loading chats: $e');
     }
   }
 
-  void _navigateToChat(Map<String, dynamic> chat) {
+  Future<void> _logout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Выход из аккаунта'),
+        content: const Text('Вы уверены, что хотите выйти?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Выйти'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout == true) {
+      await _performLogout();
+    }
+  }
+
+  Future<void> _performLogout() async {
+    try {
+      _webSocketService.disconnect();
+      
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('auth_token');
+      
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const AuthenticationScreen(),
+          ),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      debugPrint('Error during logout: $e');
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const AuthenticationScreen(),
+          ),
+          (route) => false,
+        );
+      }
+    }
+  }
+
+  void _navigateToChat(Chat chat) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ChatScreen(
-          chatId: chat['id'],
-          chatName: chat['name'],
+          chatId: chat.id,
+          chatName: chat.name,
           userUID: widget.userUID,
           webSocketService: _webSocketService,
         ),
@@ -117,8 +191,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
         title: const Text('Чаты'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadInitialData,
+            icon: const Icon(Icons.logout),
+            onPressed: _logout,
+            tooltip: 'Выйти из аккаунта',
           ),
         ],
       ),
@@ -133,21 +208,19 @@ class _ChatsScreenState extends State<ChatsScreen> {
               itemCount: _chats.length,
               itemBuilder: (context, index) {
                 final chat = _chats[index];
-                final lastMessage = chat['last_message']?.toString() ?? '';
-                final lastMessageTime = chat['last_message_time'] != null
-                    ? DateTime.parse(chat['last_message_time'].toString())
-                    : null;
+                final lastMessage = chat.lastMessage ?? '';
+                final lastMessageTime = chat.lastMessageTime;
 
                 return ListTile(
                   leading: CircleAvatar(
                     backgroundColor: Colors.blue,
                     child: Text(
-                      chat['name']?.toString().substring(0, 1).toUpperCase() ?? 'C',
+                      chat.name.substring(0, 1).toUpperCase(),
                       style: const TextStyle(color: Colors.white),
                     ),
                   ),
                   title: Text(
-                    chat['name']?.toString() ?? 'Чат',
+                    chat.name,
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   subtitle: Text(
@@ -173,6 +246,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   @override
   void dispose() {
+    _webSocketService.onNewMessage = null;
     _webSocketService.disconnect();
     super.dispose();
   }

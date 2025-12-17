@@ -52,12 +52,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
     } else {
       try {
         final authService = AuthService();
-        final result = await authService.verifyToken(token);
+        final apiResponse = await authService.verifyToken(token);
         
-        if (result['success'] == true) {
+        if (apiResponse.success == true) {
+          final result = apiResponse.data!;
           screen = ChatsScreen(
-            chats: result['chats'] ?? [],
-            userUID: result['user']['uid'],
+            chats: result.chats,
+            userUID: result.user.uid,
           );
         } else {
           await prefs.remove('auth_token');
@@ -77,7 +78,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    // Пока не определили экран - ПУСТОТА
     return _screen ?? const SizedBox.shrink();
   }
 }

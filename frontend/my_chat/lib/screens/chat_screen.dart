@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:my_chat/services/chat_service.dart';
 import 'package:my_chat/services/websocket_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ChatScreen extends StatefulWidget {
   final String chatId;
@@ -9,37 +11,46 @@ class ChatScreen extends StatefulWidget {
   final WebSocketService webSocketService;
 
   const ChatScreen({
-    Key? key,
+    super.key,
     required this.chatId,
     required this.chatName,
     required this.userUID,
     required this.webSocketService,
-  }) : super(key: key);
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final ChatService _chatService = ChatService();
+  late final ChatService _chatService;
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   
-  List<Map<String, dynamic>> _messages = [];
+  List<Message> _messages = [];
   bool _isTyping = false;
-  Map<String, bool> _userTyping = {};
+  final Map<String, bool> _userTyping = {};
+  Timer? _typingTimer;
+  final Set<String> _readMessages = <String>{};
 
-  @override
+ @override
   void initState() {
     super.initState();
-    _loadMessages();
     _setupWebSocketListeners();
+    _initializeServicesAndLoadMessages();
+  }
+
+  Future<void> _initializeServicesAndLoadMessages() async {
+    final prefs = await SharedPreferences.getInstance();
+    _chatService = ChatService(prefs: prefs);
+    await _loadMessages();
   }
 
   void _setupWebSocketListeners() {
     widget.webSocketService.onNewMessage = (message) {
       if (message['chat_id'] == widget.chatId) {
-        _addNewMessage(message);
+        final newMessage = Message.fromJson(message);
+        _addNewMessage(newMessage);
       }
     };
 
@@ -62,13 +73,16 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       for (int i = _messages.length - 1; i >= 0; i--) {
         final message = _messages[i];
-        if (message['is_sending'] == true && 
-            message['chat_id'] == widget.chatId) {
-          _messages[i] = {
-            ...message,
-            'id': messageId,
-            'is_sending': false,
-          };
+        if (message.isSending && message.tempId != null) {
+          _messages[i] = Message(
+            id: messageId,
+            chatId: message.chatId,
+            senderId: message.senderId,
+            text: message.text,
+            timestamp: message.timestamp,
+            isSending: false,
+            tempId: null,
+          );
           break;
         }
       }
@@ -77,44 +91,61 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadMessages() async {
     try {
-      final messages = await _chatService.getMessages(widget.chatId);
-      if (messages['success'] == true) {
+      final result = await _chatService.getMessages(widget.chatId);
+      if (result.success) {
+        final List<Message> messages = result.data!;
         setState(() {
-          _messages = List<Map<String, dynamic>>.from(messages['messages']);
+          _messages = messages;
         });
         _scrollToBottom();
+        _markVisibleMessagesAsRead();
       }
-    } catch (e) {
-      print('Error loading messages: $e');
+    }
+    catch(e) {
+        debugPrint('Error while loading messages: $e');
     }
   }
 
-  void _addNewMessage(Map<String, dynamic> message) {
+  void _addNewMessage(Message message) {
     setState(() {
       _messages.add(message);
     });
     _scrollToBottom();
-    
-    widget.webSocketService.markMessageAsRead(
-      chatId: widget.chatId,
-      messageId: message['id'],
-    );
+    _markVisibleMessagesAsRead();
   }
 
-  void _sendMessage() async {
+  void _markVisibleMessagesAsRead() {
+    const messagesToMark = 5;
+    final startIndex = _messages.length > messagesToMark 
+        ? _messages.length - messagesToMark 
+        : 0;
+    
+    for (int i = startIndex; i < _messages.length; i++) {
+      final message = _messages[i];
+      if (message.senderId != widget.userUID && 
+          !_readMessages.contains(message.id)) {
+        _readMessages.add(message.id);
+        widget.webSocketService.markMessageAsRead(
+          chatId: widget.chatId,
+          messageId: message.id,
+        );
+      }
+    }
+  }
+
+  void _sendMessage() {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
-    final tempId = DateTime.now().millisecondsSinceEpoch.toString();
-    final tempMessage = {
-      'id': 'temp_${DateTime.now().millisecondsSinceEpoch}',
-      'temp_id': tempId,
-      'chat_id': widget.chatId,
-      'sender_id': widget.userUID,
-      'text': text,
-      'timestamp': DateTime.now().toIso8601String(),
-      'is_sending': true,
-    };
+    final tempMessage = Message(
+      id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+      chatId: widget.chatId,
+      senderId: widget.userUID,
+      text: text,
+      timestamp: DateTime.now(),
+      isSending: true,
+      tempId: DateTime.now().millisecondsSinceEpoch.toString(),
+    );
 
     setState(() {
       _messages.add(tempMessage);
@@ -124,7 +155,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
     _setTypingStatus(false);
 
-    // Отправляем через WebSocket
     widget.webSocketService.sendMessage(
       chatId: widget.chatId,
       text: text,
@@ -141,6 +171,24 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _onTextChanged(String text) {
+    final isTyping = text.isNotEmpty;
+    
+    _typingTimer?.cancel();
+    
+    if (isTyping && !_isTyping) {
+      _setTypingStatus(true);
+    }
+    
+    if (!isTyping && _isTyping) {
+      _typingTimer = Timer(const Duration(seconds: 1), () {
+        if (_messageController.text.isEmpty && _isTyping) {
+          _setTypingStatus(false);
+        }
+      });
+    }
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -153,19 +201,9 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  String _formatMessageTime(String timestamp) {
-    try {
-      final time = DateTime.parse(timestamp);
-      return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-    } catch (e) {
-      return '';
-    }
-  }
-
-  Widget _buildMessageBubble(Map<String, dynamic> message) {
-    final isMe = message['sender_id'] == widget.userUID;
-    final isSending = message['is_sending'] == true;
-    final isTemp = message['id']?.toString().startsWith('temp_') ?? false;
+  Widget _buildMessageBubble(Message message) {
+    final isMe = message.senderId == widget.userUID;
+    final isSending = message.isSending;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
@@ -187,42 +225,18 @@ class _ChatScreenState extends State<ChatScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  message['text'] ?? '',
+                  message.text,
                   style: TextStyle(
                     color: isMe ? Colors.white : Colors.black,
                   ),
                 ),
                 const SizedBox(height: 4),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _formatMessageTime(message['timestamp'] ?? ''),
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: isMe ? Colors.white70 : Colors.grey[600],
-                      ),
-                    ),
-                    if (isSending) ...[
-                      const SizedBox(width: 4),
-                      SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: isMe ? Colors.white70 : Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                    if (isTemp && !isSending) ...[
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.check,
-                        size: 12,
-                        color: isMe ? Colors.white70 : Colors.grey[600],
-                      ),
-                    ],
-                  ],
+                Text(
+                  '${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: isMe ? Colors.white70 : Colors.grey[600],
+                  ),
                 ),
               ],
             ),
@@ -250,26 +264,12 @@ class _ChatScreenState extends State<ChatScreen> {
             color: Colors.grey[200],
             borderRadius: BorderRadius.circular(16.0),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.grey[600],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Печатает...',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
+          child: Text(
+            'Печатает...',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+            ),
           ),
         ),
       ),
@@ -278,28 +278,23 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final typingUsers = _userTyping.entries
+        .where((entry) => entry.value == true)
+        .toList();
+
     return Scaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(widget.chatName),
-            const SizedBox(height: 2),
-            StreamBuilder(
-              stream: Stream.periodic(const Duration(seconds: 1)),
-              builder: (context, snapshot) {
-                final typingUsers = _userTyping.entries
-                    .where((entry) => entry.value == true)
-                    .toList();
-                if (typingUsers.isNotEmpty) {
-                  return const Text(
-                    'Печатает...',
-                    style: TextStyle(fontSize: 12),
-                  );
-                }
-                return const SizedBox.shrink();
-              },
-            ),
+            if (typingUsers.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              const Text(
+                'Печатает...',
+                style: TextStyle(fontSize: 12),
+              ),
+            ],
           ],
         ),
       ),
@@ -342,9 +337,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         vertical: 8.0,
                       ),
                     ),
-                    onChanged: (text) {
-                      _setTypingStatus(text.isNotEmpty);
-                    },
+                    onChanged: _onTextChanged,
                     onSubmitted: (_) => _sendMessage(),
                   ),
                 ),
@@ -364,6 +357,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _typingTimer?.cancel();
+    
+    widget.webSocketService.onNewMessage = null;
+    widget.webSocketService.onUserTyping = null;
+    widget.webSocketService.onMessageSent = null;
+    
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();

@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:my_chat/services/auth_service.dart';
 import 'package:my_chat/screens/chats_screen.dart';
@@ -13,78 +15,116 @@ class AuthenticationScreen extends StatefulWidget {
 class _AuthenticationScreenState extends State<AuthenticationScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
   
   final AuthService _authService = AuthService();
-  bool _isLoading = false;
   bool _isLogin = true;
-  final TextEditingController _usernameController = TextEditingController();
+  bool _isProcessing = false;
 
   Future<void> _saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('auth_token', token);
   }
 
-  void _authenticate() async {
-    final String email = _emailController.text.trim();
-    final String password = _passwordController.text.trim();
-
-    if (email.isEmpty || password.isEmpty) {
-      _showSnackBar('Пожалуйста, заполните все поля');
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    Map<String, dynamic> result;
+  Future<void> _authenticate() async {
+    if (_isProcessing) return;
+    if (!_validateInputs()) return;
     
-    if (_isLogin) {
-      result = await _authService.login(email, password);
-    } else {
-      final String username = _usernameController.text.trim();
-      if (username.isEmpty) {
-        _showSnackBar('Введите имя пользователя');
-        setState(() { _isLoading = false; });
-        return;
-      }
-      result = await _authService.register(username, email, password);
-    }
+    setState(() => _isProcessing = true);
 
-    setState(() {
-      _isLoading = false;
-    });
-
-    if (result['success'] == true) {
+    try {
       if (_isLogin) {
-        if (result['token'] != null) {
-          await _saveToken(result['token']);
-        }
-        
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ChatsScreen(
-                chats: result['chats'],
-                userUID: result['user']['uid'],
-              ),
-            ),
-          );
-        }
+        await _performLogin();
       } else {
-        _showSnackBar('Регистрация успешна! Войдите в аккаунт.');
-        setState(() {
-          _isLogin = true;
-          _usernameController.clear();
-        });
+        await _performRegistration();
       }
-    } else {
-      _showSnackBar('Ошибка: ${result['error']}');
+    } on SocketException {
+      _showSnackBar('Нет подключения к интернету');
+    } on TimeoutException {
+      _showSnackBar('Превышено время ожидания');
+    } catch (e) {
+      _showSnackBar('Произошла ошибка: ${e.toString()}');
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
+  bool _validateInputs() {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    
+    if (email.isEmpty || password.isEmpty) {
+      _showSnackBar('Пожалуйста, заполните все поля');
+      return false;
+    }
+    
+    if (!_isLogin && _usernameController.text.trim().isEmpty) {
+      _showSnackBar('Введите имя пользователя');
+      return false;
+    }
+    
+    return true;
+  }
+  
+  Future<void> _performLogin() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    
+    final apiResponse = await _authService.login(email, password);
+    
+    if (apiResponse.success == true) {
+      final loginResponse = apiResponse.data!;
+      await _saveToken(loginResponse.token);
+      
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatsScreen(
+              chats: loginResponse.chats,
+              userUID: loginResponse.user.uid,
+            ),
+          ),
+        );
+      }
+    } else {
+      _showSnackBar('Ошибка: ${apiResponse.error}');
+    }
+  }
+
+  Future<void> _performRegistration() async {
+    final username = _usernameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    
+    final apiResponse = await _authService.register(
+      username: username,
+      email: email,
+      password: password,
+    );
+    
+    if (apiResponse.success == true) {
+      _showSnackBar('Регистрация успешна! Войдите в аккаунт.');
+      if (mounted) {
+        setState(() {
+          _isLogin = true;
+          _clearRegistrationFields();
+        });
+      }
+    } else {
+      _showSnackBar('Ошибка: ${apiResponse.error}');
+    }
+  }
+
+  void _clearRegistrationFields() {
+    _usernameController.clear();
+    _emailController.clear();
+    _passwordController.clear();
+  }
+
   void _showSnackBar(String message) {
+    if (!mounted) return;
+    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -107,10 +147,12 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
             if (!_isLogin) ...[
               TextField(
                 controller: _usernameController,
+                maxLength: 30,
                 decoration: const InputDecoration(
                   labelText: 'Имя пользователя',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.person),
+                  counterText: '',
                 ),
               ),
               const SizedBox(height: 20),
@@ -119,10 +161,12 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
             TextField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
+              maxLength: 100,
               decoration: const InputDecoration(
                 labelText: 'Email',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.email),
+                counterText: '',
               ),
             ),
 
@@ -131,10 +175,12 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
             TextField(
               controller: _passwordController,
               obscureText: true,
+              maxLength: 50,
               decoration: const InputDecoration(
                 labelText: 'Пароль',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.lock),
+                counterText: '',
               ),
             ),
             
@@ -144,7 +190,7 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                onPressed: _isLoading ? null : _authenticate, // Просто блокируем кнопку
+                onPressed: _isProcessing ? null : _authenticate,
                 child: Text(_isLogin ? 'Войти' : 'Зарегистрироваться'),
               ),
             ),
@@ -152,11 +198,13 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
             const SizedBox(height: 20),
             
             TextButton(
-              onPressed: () {
+              onPressed: _isProcessing ? null : () {
                 setState(() {
                   _isLogin = !_isLogin;
                   if (_isLogin) {
-                    _usernameController.clear();
+                    _clearRegistrationFields();
+                  } else {
+                    _passwordController.clear();
                   }
                 });
               },
@@ -170,5 +218,14 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _usernameController.dispose();
+    _authService.dispose();
+    super.dispose();
   }
 }

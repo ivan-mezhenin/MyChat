@@ -37,7 +37,9 @@ func (h *Handler) GetMessages(c echo.Context) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, messages)
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"messages": messages,
+	})
 }
 
 func (h *Handler) getUserIDFromToken(r *http.Request) (string, error) {

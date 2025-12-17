@@ -100,8 +100,9 @@ class _ChatScreenState extends State<ChatScreen> {
         _scrollToBottom();
         _markVisibleMessagesAsRead();
       }
-    } catch (e) {
-      print('Error loading messages: $e');
+    }
+    catch(e) {
+        debugPrint('Error while loading messages: $e');
     }
   }
 

@@ -295,7 +295,7 @@ class WebSocketService {
   }
 
   void _printDebug(String message) {
-    print('[WebSocket] $message');
+    _printDebug('[WebSocket] $message');
   }
 
   bool get isConnected => _channel != null;

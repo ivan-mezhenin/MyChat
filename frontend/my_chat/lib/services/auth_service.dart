@@ -286,8 +286,9 @@ class AuthService {
 
     if (result.success) {
       try {
+
         final data = {
-          ...result.data!,
+          ...(result.data as Map<String, dynamic>),
           'token': token,
         };
         

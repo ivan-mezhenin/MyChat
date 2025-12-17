@@ -36,7 +36,7 @@ class WebSocketConfig {
     required this.baseUrl,
     this.reconnectDelay = const Duration(seconds: 3),
     this.maxReconnectAttempts = 5,
-    this.connectionTimeout = const Duration(seconds: 10),
+    this.connectionTimeout = const Duration(seconds: 1000),
   });
 
   factory WebSocketConfig.development() => WebSocketConfig(

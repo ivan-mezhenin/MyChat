@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 typedef WebSocketMessageCallback = void Function(Map<String, dynamic> data);
@@ -69,6 +70,7 @@ class WebSocketService {
   WebSocketMessageCallback? onUserTyping;
   WebSocketMessageCallback? onMessageSent;
   WebSocketMessageCallback? onMessageRead;
+  WebSocketMessageCallback? onNewChat;
   WebSocketConnectionCallback? onConnectionChanged;
 
   WebSocketService({
@@ -197,6 +199,9 @@ class WebSocketService {
         case 'error':
           _handleErrorMessage(message.data);
           break;
+        case 'chat_created':
+          _handleNewChat(message.data);
+          break;
         default:
           _printDebug('Unknown message type: ${message.type}');
       }
@@ -295,7 +300,11 @@ class WebSocketService {
   }
 
   void _printDebug(String message) {
-    _printDebug('[WebSocket] $message');
+    debugPrint('[WebSocket] $message');
+  }
+
+   void _handleNewChat(Map<String, dynamic> data) {
+    onNewChat?.call(data);
   }
 
   bool get isConnected => _channel != null;

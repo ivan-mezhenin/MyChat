@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:my_chat/screens/contacts_screen.dart';
+import 'package:my_chat/screens/create_group_chat_screen.dart';
 import 'package:my_chat/services/chat_service.dart';
 import 'package:my_chat/services/websocket_service.dart';
 import 'package:my_chat/screens/chat_screen.dart';
@@ -8,11 +10,14 @@ import 'package:my_chat/screens/authentication_screen.dart';
 class ChatsScreen extends StatefulWidget {
   final List<Chat> chats;
   final String userUID;
+  final WebSocketService webSocketService; 
+  
 
   const ChatsScreen({
     super.key,
     required this.chats,
     required this.userUID,
+    required this.webSocketService,
   });
 
   @override
@@ -21,7 +26,6 @@ class ChatsScreen extends StatefulWidget {
 
 class _ChatsScreenState extends State<ChatsScreen> {
   late ChatService _chatService;
-  final WebSocketService _webSocketService = WebSocketService();
   List<Chat> _chats = [];
   String? _authToken;
 
@@ -39,21 +43,57 @@ class _ChatsScreenState extends State<ChatsScreen> {
       _authToken = prefs.getString('auth_token');
       
       _chatService = ChatService(prefs: prefs);
-      
-      if (_authToken != null) {
-        await _webSocketService.connect(_authToken!);
-        await _loadInitialData();
+      await _loadInitialData();
       }
-    } catch (e) {
+    catch (e) {
       debugPrint('Error initializing services: $e');
     }
   }
 
+   void _navigateToContacts() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ContactsScreen(userUID: widget.userUID,  webSocketService: widget.webSocketService,),
+      ),
+    );
+  }
+
+  void _navigateToCreateGroupChat() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateGroupChatScreen(userUID: widget.userUID, webSocketService: widget.webSocketService,),
+      ),
+    );
+  }
+
   void _setupWebSocketListeners() {
-    _webSocketService.onNewMessage = (message) {
+    widget.webSocketService.onNewMessage = (message) {
       _updateChatLastMessage(message);
     };
+
+    widget.webSocketService.onNewChat = (chatData) {
+      _addNewChat(chatData);
+    };
   }
+
+    void _addNewChat(Map<String, dynamic> chatData) {
+    if (!mounted) return;
+    
+    final chat = Chat(
+      id: chatData['chat_id'] as String,
+      name: chatData['name'] as String,
+      participantIds: List<String>.from(chatData['participants'] as List),
+      lastMessage: null,
+      lastMessageTime: null,
+    );
+    
+    setState(() {
+      _chats.insert(0, chat);
+    });
+    }
+
 
   void _updateChatLastMessage(Map<String, dynamic> message) {
     if (!mounted) return;
@@ -73,6 +113,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
             lastMessageTime: timestamp,
             participantIds: chat.participantIds,
           );
+
+          final updatedChat = _chats.removeAt(i);
+          _chats.insert(0, updatedChat);
           break;
         }
       }
@@ -125,7 +168,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   Future<void> _performLogout() async {
     try {
-      _webSocketService.disconnect();
+      widget.webSocketService.disconnect();
       
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('auth_token');
@@ -161,7 +204,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
           chatId: chat.id,
           chatName: chat.name,
           userUID: widget.userUID,
-          webSocketService: _webSocketService,
+          webSocketService: widget.webSocketService,
         ),
       ),
     );
@@ -195,7 +238,17 @@ class _ChatsScreenState extends State<ChatsScreen> {
             onPressed: _logout,
             tooltip: 'Выйти из аккаунта',
           ),
+          IconButton(
+            icon: const Icon(Icons.contacts),
+            onPressed: _navigateToContacts,
+            tooltip: 'Contacts',
+          ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _navigateToCreateGroupChat,
+        tooltip: 'New group chat',
+        child: const Icon(Icons.add_comment),
       ),
       body: _chats.isEmpty
           ? const Center(
@@ -246,8 +299,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   @override
   void dispose() {
-    _webSocketService.onNewMessage = null;
-    _webSocketService.disconnect();
+   widget.webSocketService.onNewMessage = null;
+   widget.webSocketService.onNewChat = null;
     super.dispose();
   }
 }

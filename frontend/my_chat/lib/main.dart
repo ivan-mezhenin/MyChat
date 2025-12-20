@@ -1,7 +1,12 @@
+// main.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:my_chat/screens/authentication_screen.dart';
 import 'package:my_chat/screens/chats_screen.dart';
+import 'package:my_chat/services/chat_service.dart';
 import 'package:my_chat/services/auth_service.dart';
+import 'package:my_chat/services/websocket_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
@@ -21,6 +26,7 @@ class MyChatApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const AuthWrapper(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
@@ -34,50 +40,132 @@ class AuthWrapper extends StatefulWidget {
 
 class _AuthWrapperState extends State<AuthWrapper> {
   Widget? _screen;
+  String? _error;
+  WebSocketService? _webSocketService;
+  StreamSubscription? _connectionSubscription;
 
   @override
   void initState() {
     super.initState();
-    _determineScreen();
+    _initializeApp();
   }
 
-  Future<void> _determineScreen() async {
+  Future<void> _initializeApp() async {
+    try {
+      await _checkAuthAndNavigate();
+    } catch (e) {
+      _handleError('Ошибка инициализации: $e');
+    }
+  }
+
+  Future<void> _checkAuthAndNavigate() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
-    
-    Widget screen;
-    
-    if (token == null) {
-      screen = const AuthenticationScreen();
-    } else {
-      try {
-        final authService = AuthService();
-        final apiResponse = await authService.verifyToken(token);
-        
-        if (apiResponse.success == true) {
-          final result = apiResponse.data!;
-          screen = ChatsScreen(
-            chats: result.chats,
-            userUID: result.user.uid,
-          );
-        } else {
-          await prefs.remove('auth_token');
-          screen = const AuthenticationScreen();
-        }
-      } catch (e) {
-        screen = const AuthenticationScreen();
+
+    if (token == null || token.isEmpty) {
+      _navigateToAuth();
+      return;
+    }
+
+    try {
+      final authService = AuthService();
+      
+      final apiResponse = await authService.verifyToken(token)
+          .timeout(const Duration(seconds: 10));
+
+      if (!apiResponse.success || apiResponse.data == null) {
+        await prefs.remove('auth_token');
+        _navigateToAuth();
+        return;
       }
+
+      final result = apiResponse.data!;
+      
+      _webSocketService = WebSocketService();
+      
+      _setupWebSocketListeners();
+      
+      _connectWebSocket(token);
+
+      _navigateToChats(
+        chats: result.chats,
+        userUID: result.user.uid,
+      );
+      
+    } on TimeoutException {
+      await prefs.remove('auth_token');
+      _handleError('Превышено время ожидания сервера');
+    } catch (e) {
+      await prefs.remove('auth_token');
+      _handleError('Ошибка авторизации: $e');
     }
+  }
+
+  void _setupWebSocketListeners() {
+    if (_webSocketService == null) return;
     
-    if (mounted) {
-      setState(() {
-        _screen = screen;
-      });
+    _connectionSubscription = _webSocketService!.connectionStream.listen((connected) {
+      debugPrint('WebSocket connection status: $connected');
+      if (!connected) {
+        debugPrint('WebSocket disconnected');
+      }
+    });
+  }
+
+  Future<void> _connectWebSocket(String token) async {
+    try {
+      await _webSocketService?.connect(token);
+      debugPrint('WebSocket connection initiated');
+    } catch (e) {
+      debugPrint('WebSocket connection error: $e');
     }
+  }
+
+  void _navigateToAuth() {
+    if (!mounted) return;
+    
+    setState(() {
+      _screen = const AuthenticationScreen();
+    });
+  }
+
+  void _navigateToChats({required List<Chat> chats, required String userUID}) {
+    if (!mounted || _webSocketService == null) return;
+    
+    setState(() {
+      _screen = ChatsScreen(
+        chats: chats,
+        userUID: userUID,
+        webSocketService: _webSocketService!,
+      );
+    });
+  }
+
+  void _handleError(String error) {
+    debugPrint(error);
+    
+    if (!mounted) return;
+    
+    setState(() {
+      _error = error;
+      _screen = const AuthenticationScreen();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return _screen ?? const SizedBox.shrink();
+    
+    return _screen ?? const AuthenticationScreen();
+  }
+
+  @override
+  void dispose() {
+    _connectionSubscription?.cancel();
+    _connectionSubscription = null;
+    
+    _webSocketService?.dispose();
+    _webSocketService = null;
+    
+    super.dispose();
   }
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
@@ -164,4 +165,56 @@ func (s *Server) Stop() {
 		client.Connection.Close()
 		delete(s.clients, userID)
 	}
+}
+
+func (s *Server) BroadcastChatCreated(chatID string, chatData map[string]interface{}) error {
+	participants, ok := chatData["participants"].([]interface{})
+	if !ok {
+		return fmt.Errorf("invalid participants format")
+	}
+
+	event := WSEvent{
+		Type:   "chat_created",
+		ChatID: chatID,
+		Data:   chatData,
+	}
+
+	participantIDs := make([]string, len(participants))
+	for i, p := range participants {
+		if str, ok := p.(string); ok {
+			participantIDs[i] = str
+		}
+	}
+
+	sentCount := 0
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, userID := range participantIDs {
+		if client, exists := s.clients[userID]; exists {
+			if err := client.Connection.WriteJSON(event); err != nil {
+				log.Printf("Failed to send chat_created to user %s: %v", userID, err)
+				continue
+			}
+			sentCount++
+			log.Printf("Sent chat_created event to user %s for chat %s", userID, chatID)
+		}
+	}
+
+	log.Printf("Broadcasted chat %s creation to %d/%d users",
+		chatID, sentCount, len(participantIDs))
+	return nil
+}
+
+func (s *Server) GetClients() map[string]*Client {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	clientsCopy := make(map[string]*Client)
+	maps.Copy(clientsCopy, s.clients)
+	return clientsCopy
+}
+
+func (s *Server) SendToUserSafe(userID string, event WSEvent) error {
+	return s.SendToUser(userID, event)
 }

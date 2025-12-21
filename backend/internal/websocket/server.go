@@ -60,6 +60,17 @@ func (s *Server) HandleConnection(w http.ResponseWriter, r *http.Request) {
 	s.clients[userUID] = client
 	s.mu.Unlock()
 
+	connection.SetPongHandler(func(string) error {
+		s.mu.Lock()
+		if client, exists := s.clients[userUID]; exists {
+			client.LastSeen = time.Now()
+		}
+		s.mu.Unlock()
+		return nil
+	})
+
+	go s.startPing(client)
+
 	go s.setupUserListeners(userUID)
 
 	s.handleClientMessages(client)
@@ -81,7 +92,22 @@ func (s *Server) SendToUser(userID string, event WSEvent) error {
 	}
 
 	client.LastSeen = time.Now()
-	return client.Connection.WriteJSON(event)
+
+	client.Connection.SetWriteDeadline(time.Now().Add(5 * time.Second))
+
+	err := client.Connection.WriteJSON(event)
+
+	client.Connection.SetWriteDeadline(time.Time{})
+
+	if err != nil {
+		log.Printf("Failed to send %s to user %s: %v", event.Type, userID, err)
+
+		go client.Connection.Close()
+		return err
+	}
+
+	log.Printf("Successfully sent %s to user %s", event.Type, userID)
+	return nil
 }
 
 func (s *Server) BroadcastToChat(chatID string, event WSEvent, excludeUserID string) (int, error) {
@@ -112,6 +138,8 @@ func (s *Server) BroadcastToChat(chatID string, event WSEvent, excludeUserID str
 }
 
 func (s *Server) handleClientMessages(client *Client) {
+
+	client.Connection.SetReadDeadline(time.Time{})
 	for {
 		var event WSEvent
 		if err := client.Connection.ReadJSON(&event); err != nil {
@@ -135,6 +163,8 @@ func (s *Server) handleIncomingEvent(userID string, event WSEvent) {
 		s.handleTyping(userID, event)
 	case "message_read":
 		s.handleMessageRead(userID, event)
+	case "ping":
+		s.handlePing(userID, event)
 	default:
 		log.Printf("Unknown event type from user %s: %s", userID, event.Type)
 	}
@@ -217,4 +247,28 @@ func (s *Server) GetClients() map[string]*Client {
 
 func (s *Server) SendToUserSafe(userID string, event WSEvent) error {
 	return s.SendToUser(userID, event)
+}
+
+func (s *Server) startPing(client *Client) {
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		s.mu.RLock()
+		_, exists := s.clients[client.UserID]
+		s.mu.RUnlock()
+
+		if !exists {
+			return
+		}
+
+		client.Connection.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		err := client.Connection.WriteMessage(websocket.PingMessage, []byte{})
+		client.Connection.SetWriteDeadline(time.Time{})
+
+		if err != nil {
+			log.Printf("Failed to send ping to user %s: %v", client.UserID, err)
+			return
+		}
+	}
 }

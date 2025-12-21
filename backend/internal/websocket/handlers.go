@@ -75,7 +75,6 @@ func (s *Server) handleSendMessage(userID string, event WSEvent) {
 		Data:   messageData,
 	}
 
-	// Рассылаем всем кроме отправителя
 	s.BroadcastToChat(chatID, broadcastEvent, userID)
 
 }
@@ -179,4 +178,11 @@ func (s *Server) handleMessageRead(userID string, event WSEvent) {
 	if err != nil {
 		log.Printf("Failed to mark message as read: %v", err)
 	}
+}
+
+func (s *Server) handlePing(userID string, event WSEvent) {
+	s.SendToUser(userID, WSEvent{
+		Type: "pong",
+		Data: event.Data,
+	})
 }

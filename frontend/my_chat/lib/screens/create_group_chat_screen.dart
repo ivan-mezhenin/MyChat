@@ -10,7 +10,11 @@ class CreateGroupChatScreen extends StatefulWidget {
   final String userUID;
   final WebSocketService webSocketService;
 
-  const CreateGroupChatScreen({super.key, required this.userUID, required this.webSocketService});
+  const CreateGroupChatScreen({
+    super.key, 
+    required this.userUID, 
+    required this.webSocketService,
+  });
 
   @override
   State<CreateGroupChatScreen> createState() => _CreateGroupChatScreenState();
@@ -23,6 +27,7 @@ class _CreateGroupChatScreenState extends State<CreateGroupChatScreen> {
   final List<Contact> _selectedContacts = [];
   final TextEditingController _chatNameController = TextEditingController();
   bool _isLoading = true;
+  bool _isCreating = false;
 
   @override
   void initState() {
@@ -31,25 +36,45 @@ class _CreateGroupChatScreenState extends State<CreateGroupChatScreen> {
   }
 
   Future<void> _initializeServices() async {
-    final prefs = await SharedPreferences.getInstance();
-    _contactService = ContactService(prefs: prefs);
-    _chatCreationService = ChatCreationService(prefs: prefs);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _contactService = ContactService(prefs: prefs);
+      _chatCreationService = ChatCreationService(prefs: prefs);
 
-    await _loadContacts();
+      await _loadContacts();
+    } catch (e) {
+      _printDebug('Error initializing services: $e');
+      _showSnackBar('Ошибка инициализации');
+    }
   }
 
   Future<void> _loadContacts() async {
-      if (_contactService == null) return; 
+    if (_contactService == null) {
+      _printDebug('Contact service not initialized');
+      return;
+    }
 
-    final response = await _contactService!.getContacts();
-    
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        if (response.success) {
-          _contacts = response.data!;
-        }
-      });
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await _contactService!.getContacts();
+      
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          if (response.success) {
+            _contacts = response.data!;
+            _printDebug('Loaded ${_contacts.length} contacts');
+          } else {
+            _showSnackBar('Не удалось загрузить контакты');
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _showSnackBar('Ошибка загрузки контактов');
+      }
     }
   }
 
@@ -64,52 +89,72 @@ class _CreateGroupChatScreenState extends State<CreateGroupChatScreen> {
   }
 
   Future<void> _createGroupChat() async {
+    if (_isCreating) return;
 
     if (_chatCreationService == null || _contactService == null) {
-        _showSnackBar('Сервисы не инициализированы');
-        return;
-        }
+      _showSnackBar('Сервисы не инициализированы');
+      return;
+    }
+
     if (_chatNameController.text.isEmpty) {
-      _showSnackBar('Please enter chat name');
+      _showSnackBar('Введите название чата');
       return;
     }
 
     if (_selectedContacts.isEmpty) {
-      _showSnackBar('Please select at least one contact');
+      _showSnackBar('Выберите хотя бы один контакт');
       return;
     }
 
-    _showLoadingDialog('Creating group chat...');
+    setState(() => _isCreating = true);
     
-    final response = await _chatCreationService!.createChatFromContacts(
-      chatName: _chatNameController.text,
-      contactIds: _selectedContacts.map((c) => c.id).toList(),
-      chatType: 'group',
-    );
-    if (!mounted) return; 
-    Navigator.pop(context);
+    _showLoadingDialog('Создание группового чата...');
     
-    if (response.success) {
-      final chat = response.data!;
-      _openChatScreen(chat.id, chat.name);
-    } else {
-      _showSnackBar('Error: ${response.error}');
+    try {
+      final response = await _chatCreationService!.createChatFromContacts(
+        chatName: _chatNameController.text,
+        contactIds: _selectedContacts.map((c) => c.id).toList(),
+        chatType: 'group',
+      );
+      
+      if (!mounted) return;
+      Navigator.pop(context);
+      setState(() => _isCreating = false);
+      
+      if (response.success) {
+        final chat = response.data!;
+        _printDebug('Chat created successfully: ${chat.id}');
+        _openChatScreen(chat.id, chat.name);
+      } else {
+        _showSnackBar('Ошибка: ${response.error}');
+      }
+    } catch (e, stackTrace) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      setState(() => _isCreating = false);
+      _printDebug('Error creating chat: $e\n$stackTrace');
+      _showSnackBar('Ошибка при создании чата');
     }
   }
 
   void _openChatScreen(String chatId, String chatName) {
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatScreen(
-          chatId: chatId,
-          chatName: chatName,
-          userUID: widget.userUID,
-          webSocketService: widget.webSocketService,
-        ),
-      ),
-      (route) => route.isFirst,
-    );
+    Navigator.pop(context);
+    
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(
+              chatId: chatId,
+              chatName: chatName,
+              userUID: widget.userUID,
+              webSocketService: widget.webSocketService,
+            ),
+          ),
+        );
+      }
+    });
   }
 
   void _showLoadingDialog(String message) {
@@ -137,6 +182,10 @@ class _CreateGroupChatScreenState extends State<CreateGroupChatScreen> {
     );
   }
 
+  void _printDebug(String message) {
+    debugPrint('[CreateGroupChat] $message');
+  }
+
   Widget _buildSelectedContacts() {
     if (_selectedContacts.isEmpty) {
       return Container();
@@ -148,7 +197,7 @@ class _CreateGroupChatScreenState extends State<CreateGroupChatScreen> {
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Text(
-            'Selected contacts:',
+            'Выбранные контакты:',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
         ),
@@ -212,11 +261,27 @@ class _CreateGroupChatScreenState extends State<CreateGroupChatScreen> {
   }
 
   Widget _buildContactList() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     if (_contacts.isEmpty) {
-      return const Center(
-        child: Text(
-          'No contacts available. Add contacts first.',
-          style: TextStyle(color: Colors.grey),
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.contacts_outlined, size: 80, color: Colors.grey),
+            const SizedBox(height: 16),
+            const Text(
+              'Нет доступных контактов',
+              style: TextStyle(fontSize: 18, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Добавьте контакты сначала',
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            ),
+          ],
         ),
       );
     }
@@ -238,8 +303,16 @@ class _CreateGroupChatScreenState extends State<CreateGroupChatScreen> {
               ),
             ),
           ),
-          title: Text(contact.displayName),
-          subtitle: Text(contact.contactEmail),
+          title: Text(
+            contact.displayName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            contact.contactEmail,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
           trailing: Checkbox(
             value: isSelected,
             onChanged: (_) => _toggleContactSelection(contact),
@@ -254,13 +327,14 @@ class _CreateGroupChatScreenState extends State<CreateGroupChatScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create Group Chat'),
+        title: const Text('Создать групповой чат'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.check),
-            onPressed: _createGroupChat,
-            tooltip: 'Create chat',
-          ),
+          if (!_isCreating)
+            IconButton(
+              icon: const Icon(Icons.check),
+              onPressed: _createGroupChat,
+              tooltip: 'Создать чат',
+            ),
         ],
       ),
       body: Column(
@@ -270,18 +344,17 @@ class _CreateGroupChatScreenState extends State<CreateGroupChatScreen> {
             child: TextField(
               controller: _chatNameController,
               decoration: const InputDecoration(
-                labelText: 'Chat Name',
-                hintText: 'Enter chat name',
+                labelText: 'Название чата',
+                hintText: 'Введите название чата',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.chat),
               ),
+              maxLength: 50,
             ),
           ),
           _buildSelectedContacts(),
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _buildContactList(),
+            child: _buildContactList(),
           ),
         ],
       ),
@@ -290,12 +363,6 @@ class _CreateGroupChatScreenState extends State<CreateGroupChatScreen> {
 
   @override
   void dispose() {
-    if (_contactService == null || _chatCreationService == null) {
-      super.dispose();
-      return;
-    }
-    _contactService!.dispose();
-    _chatCreationService!.dispose();
     _chatNameController.dispose();
     super.dispose();
   }

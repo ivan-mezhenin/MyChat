@@ -31,13 +31,13 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
     _authService = AuthService();
     _webSocketService = widget.webSocketService;
     
-    debugPrint('AuthenticationScreen initState - WebSocketService: ${_webSocketService != null ? "reusing" : "new"}');
+    _printDebug('AuthenticationScreen initState');
   }
 
   Future<void> _saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('auth_token', token);
-    debugPrint('Token saved to SharedPreferences');
+    _printDebug('Token saved to SharedPreferences');
   }
 
   Future<void> _authenticate() async {
@@ -45,7 +45,7 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
     if (!_validateInputs()) return;
     
     setState(() => _isProcessing = true);
-    debugPrint('Starting authentication...');
+    _printDebug('Starting authentication...');
 
     try {
       if (_isLogin) {
@@ -57,8 +57,8 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
       _showSnackBar('Нет подключения к интернету');
     } on TimeoutException {
       _showSnackBar('Превышено время ожидания');
-    } catch (e) {
-      debugPrint('Authentication error: $e');
+    } catch (e, stackTrace) {
+      _printDebug('Authentication error: $e\n$stackTrace');
       _showSnackBar('Произошла ошибка: ${e.toString()}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
@@ -86,42 +86,43 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     
-    debugPrint('Attempting login for: $email');
+    _printDebug('Attempting login for: $email');
     
     final apiResponse = await _authService.login(email, password);
     
     if (apiResponse.success == true) {
       final loginResponse = apiResponse.data!;
-      debugPrint('Login successful! Token received, user: ${loginResponse.user.uid}');
-      debugPrint('Chats count: ${loginResponse.chats.length}');
+      _printDebug('Login successful! User: ${loginResponse.user.uid}, Chats: ${loginResponse.chats.length}');
       
       await _saveToken(loginResponse.token);
       
-      if (_webSocketService != null) {
-        try {
-          debugPrint('Connecting WebSocket...');
-          await _webSocketService!.connect(loginResponse.token);
-          debugPrint('WebSocket connected');
-        } catch (e) {
-          debugPrint('WebSocket connection failed: $e');
-        }
+      _webSocketService ??= WebSocketService();
+      
+      try {
+        _printDebug('Connecting WebSocket...');
+        await _webSocketService!.connect(loginResponse.token);
+        _printDebug('WebSocket connected');
+        
+        await Future.delayed(const Duration(milliseconds: 300));
+      } catch (e, stackTrace) {
+        _printDebug('WebSocket connection failed: $e\n$stackTrace');
       }
       
       if (mounted) {
-        debugPrint('Navigating to ChatsScreen...');
+        _printDebug('Navigating to ChatsScreen...');
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (context) => ChatsScreen(
               chats: loginResponse.chats,
               userUID: loginResponse.user.uid,
-              webSocketService: _webSocketService ?? WebSocketService(),
+              webSocketService: _webSocketService!,
             ),
           ),
         );
       }
     } else {
-      debugPrint('Login failed: ${apiResponse.error}');
+      _printDebug('Login failed: ${apiResponse.error}');
       _showSnackBar('Ошибка: ${apiResponse.error}');
     }
   }
@@ -131,7 +132,7 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     
-    debugPrint('Attempting registration: $username, $email');
+    _printDebug('Attempting registration: $username, $email');
     
     final apiResponse = await _authService.register(
       username: username,
@@ -140,7 +141,7 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
     );
     
     if (apiResponse.success == true) {
-      debugPrint('Registration successful');
+      _printDebug('Registration successful');
       _showSnackBar('Регистрация успешна! Войдите в аккаунт.');
       if (mounted) {
         setState(() {
@@ -149,7 +150,7 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
         });
       }
     } else {
-      debugPrint('Registration failed: ${apiResponse.error}');
+      _printDebug('Registration failed: ${apiResponse.error}');
       _showSnackBar('Ошибка: ${apiResponse.error}');
     }
   }
@@ -171,13 +172,17 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
     );
   }
 
+  void _printDebug(String message) {
+    debugPrint('[AuthScreen] $message');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(_isLogin ? 'Вход' : 'Регистрация'),
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -266,9 +271,8 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
 
   @override
   void dispose() {
-    debugPrint('AuthenticationScreen dispose');
+    _printDebug('AuthenticationScreen dispose');
     
-    // Очищаем только если этот экран создал WebSocketService
     if (widget.webSocketService == null && _webSocketService != null) {
       _webSocketService?.dispose();
     }
@@ -276,9 +280,6 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _usernameController.dispose();
-    
-    // AuthService не имеет dispose метода - удаляем эту строку!
-    // _authService.dispose(); // <-- УДАЛИТЬ ЭТУ СТРОКУ!
     
     super.dispose();
   }

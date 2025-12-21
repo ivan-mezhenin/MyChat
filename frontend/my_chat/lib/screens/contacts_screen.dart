@@ -3,17 +3,14 @@ import 'package:my_chat/models/contact.dart';
 import 'package:my_chat/services/contact_service.dart';
 import 'package:my_chat/services/chat_creator_service.dart';
 import 'package:my_chat/screens/chat_screen.dart';
-import 'package:my_chat/services/websocket_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ContactsScreen extends StatefulWidget {
   final String userUID;
-  final WebSocketService webSocketService;
 
   const ContactsScreen({
     super.key, 
     required this.userUID, 
-    required this.webSocketService,
   });
 
   @override
@@ -232,7 +229,6 @@ class _ContactsScreenState extends State<ContactsScreen> {
               chatId: chatId,
               chatName: chatName,
               userUID: widget.userUID,
-              webSocketService: widget.webSocketService, 
             ),
           ),
         );

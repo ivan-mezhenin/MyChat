@@ -3,6 +3,7 @@ import 'package:my_chat/screens/contacts_screen.dart';
 import 'package:my_chat/screens/create_group_chat_screen.dart';
 import 'package:my_chat/services/chat_service.dart';
 import 'package:my_chat/services/websocket_service.dart';
+import 'package:my_chat/websocket_manager.dart';
 import 'package:my_chat/screens/chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:my_chat/screens/authentication_screen.dart';
@@ -10,14 +11,11 @@ import 'package:my_chat/screens/authentication_screen.dart';
 class ChatsScreen extends StatefulWidget {
   final List<Chat> chats;
   final String userUID;
-  final WebSocketService webSocketService; 
-  
 
   const ChatsScreen({
     super.key,
     required this.chats,
     required this.userUID,
-    required this.webSocketService,
   });
 
   @override
@@ -29,14 +27,13 @@ class _ChatsScreenState extends State<ChatsScreen> {
   List<Chat> _chats = [];
   String? _authToken;
   bool _isLoading = false;
+  WebSocketService? _webSocketService;
 
   @override
   void initState() {
     super.initState();
     _chats = widget.chats;
     _initializeServices();
-    _setupWebSocketListeners();
-    _printDebug('ChatsScreen initialized with ${_chats.length} chats');
   }
 
   Future<void> _initializeServices() async {
@@ -45,6 +42,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
       _authToken = prefs.getString('auth_token');
       
       _chatService = ChatService(prefs: prefs);
+      _webSocketService = await WebSocketManager().getService();
+      _setupWebSocketListeners();
       await _loadInitialData();
     } catch (e, stackTrace) {
       _printDebug('Error initializing services: $e\n$stackTrace');
@@ -56,8 +55,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => ContactsScreen(
-          userUID: widget.userUID,  
-          webSocketService: widget.webSocketService,
+          userUID: widget.userUID,
         ),
       ),
     ).then((_) {
@@ -70,8 +68,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => CreateGroupChatScreen(
-          userUID: widget.userUID, 
-          webSocketService: widget.webSocketService,
+          userUID: widget.userUID,
         ),
       ),
     ).then((_) {
@@ -80,17 +77,19 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   void _setupWebSocketListeners() {
+    if (_webSocketService == null) return;
+    
     _printDebug('Setting up WebSocket listeners');
     
-    widget.webSocketService.onNewMessage = null;
-    widget.webSocketService.onNewChat = null;
+    _webSocketService!.onNewMessage = null;
+    _webSocketService!.onNewChat = null;
     
-    widget.webSocketService.onNewMessage = (message) {
+    _webSocketService!.onNewMessage = (message) {
       _printDebug('New message received: ${message['chat_id']}');
       _updateChatLastMessage(message);
     };
 
-    widget.webSocketService.onNewChat = (chatData) {
+    _webSocketService!.onNewChat = (chatData) {
       _printDebug('New chat created: ${chatData['chat_id']}');
       _addNewChat(chatData);
     };
@@ -250,7 +249,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   Future<void> _performLogout() async {
     try {
-      widget.webSocketService.disconnect();
+      WebSocketManager().dispose();
       
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('auth_token');
@@ -288,7 +287,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
           chatId: chat.id,
           chatName: chat.name,
           userUID: widget.userUID,
-          webSocketService: widget.webSocketService,
         ),
       ),
     ).then((_) {
@@ -422,8 +420,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
   void dispose() {
     _printDebug('ChatsScreen disposing');
     
-    widget.webSocketService.onNewMessage = null;
-    widget.webSocketService.onNewChat = null;
+    if (_webSocketService != null) {
+      _webSocketService!.onNewMessage = null;
+      _webSocketService!.onNewChat = null;
+    }
     
     super.dispose();
   }

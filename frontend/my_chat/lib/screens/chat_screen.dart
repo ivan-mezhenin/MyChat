@@ -2,20 +2,19 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:my_chat/services/chat_service.dart';
 import 'package:my_chat/services/websocket_service.dart';
+import 'package:my_chat/websocket_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ChatScreen extends StatefulWidget {
   final String chatId;
   final String chatName;
   final String userUID;
-  final WebSocketService webSocketService;
 
   const ChatScreen({
     super.key,
     required this.chatId,
     required this.chatName,
     required this.userUID,
-    required this.webSocketService,
   });
 
   @override
@@ -35,12 +34,11 @@ class _ChatScreenState extends State<ChatScreen> {
   final Set<String> _readMessages = <String>{};
   bool _isLoading = false;
   bool _isSending = false;
+  WebSocketService? _webSocketService;
 
   @override
   void initState() {
     super.initState();
-    _printDebug('ChatScreen init for chat: ${widget.chatId}');
-    _setupWebSocketListeners();
     _initializeServicesAndLoadMessages();
   }
 
@@ -48,6 +46,8 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       _chatService = ChatService(prefs: prefs);
+      _webSocketService = await WebSocketManager().getService();
+      _setupWebSocketListeners();
       await _loadMessages();
     } catch (e, stackTrace) {
       _printDebug('Error initializing: $e\n$stackTrace');
@@ -55,40 +55,36 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _setupWebSocketListeners() {
-    _printDebug('Setting up WebSocket listeners');
+    if (_webSocketService == null) return;
     
-    widget.webSocketService.onNewMessage = null;
-    widget.webSocketService.onUserTyping = null;
-    widget.webSocketService.onMessageSent = null;
-    widget.webSocketService.onMessageRead = null;
+    _webSocketService!.onNewMessage = null;
+    _webSocketService!.onUserTyping = null;
+    _webSocketService!.onMessageSent = null;
+    _webSocketService!.onMessageRead = null;
     
-    widget.webSocketService.onNewMessage = (message) {
+    _webSocketService!.onNewMessage = (message) {
       if (message['chat_id'] == widget.chatId) {
-        _printDebug('New message for this chat');
         final newMessage = Message.fromJson(message);
         _addNewMessage(newMessage);
       }
     };
 
-    widget.webSocketService.onUserTyping = (data) {
+    _webSocketService!.onUserTyping = (data) {
       if (data['chat_id'] == widget.chatId && data['user_id'] != widget.userUID) {
-        _printDebug('User typing: ${data['user_id']} = ${data['is_typing']}');
         setState(() {
           _userTyping[data['user_id']] = data['is_typing'];
         });
       }
     };
 
-    widget.webSocketService.onMessageSent = (data) {
+    _webSocketService!.onMessageSent = (data) {
       if (data['chat_id'] == widget.chatId) {
-        _printDebug('Message sent confirmed: ${data['message_id']}');
         _handleMessageSent(data['message_id']);
       }
     };
 
-    widget.webSocketService.onMessageRead = (data) {
+    _webSocketService!.onMessageRead = (data) {
       if (data['chat_id'] == widget.chatId) {
-        _printDebug('Message read: ${data['message_id']}');
       }
     };
   }
@@ -125,7 +121,6 @@ class _ChatScreenState extends State<ChatScreen> {
       
       if (result.success && mounted) {
         final List<Message> messages = result.data!;
-        _printDebug('Loaded ${messages.length} messages');
         
         setState(() {
           _messages = messages;
@@ -146,8 +141,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _addNewMessage(Message message) {
     if (!mounted) return;
-    
-    _printDebug('Adding new message from ${message.senderId}');
     
     setState(() {
       final existingIndex = _messages.indexWhere((m) => m.id == message.id);
@@ -176,75 +169,76 @@ class _ChatScreenState extends State<ChatScreen> {
           !message.isSending) {
         _readMessages.add(message.id);
         
-        widget.webSocketService.markMessageAsRead(
-          chatId: widget.chatId,
-          messageId: message.id,
-        );
-        
-        _printDebug('Marked message as read: ${message.id}');
+        if (_webSocketService != null) {
+          _webSocketService!.markMessageAsRead(
+            chatId: widget.chatId,
+            messageId: message.id,
+          );
+        }
       }
     }
   }
 
-void _sendMessage() {
-  if (_isSending) return;
-  
-  final text = _messageController.text.trim();
-  if (text.isEmpty) return;
-
-  setState(() => _isSending = true);
-  
-  final tempMessage = Message(
-    id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
-    chatId: widget.chatId,
-    senderId: widget.userUID,
-    text: text,
-    timestamp: DateTime.now(),
-    isSending: true,
-    tempId: DateTime.now().millisecondsSinceEpoch.toString(),
-  );
-
-  setState(() {
-    _messages.add(tempMessage);
-    _messageController.clear();
-  });
-  
-  _scrollToBottom();
-  _setTypingStatus(false);
-
-  try {
-    widget.webSocketService.sendMessage(
-      chatId: widget.chatId,
-      text: text,
-    );
-    _printDebug('Message sent via WebSocket');
+  void _sendMessage() {
+    if (_isSending) return;
     
-    Future.delayed(const Duration(seconds: 5), () {
-      if (mounted) {
-        setState(() {
-          final index = _messages.indexWhere((m) => m.tempId == tempMessage.tempId);
-          if (index != -1 && _messages[index].isSending) {
-            _printDebug('Message not confirmed, marking as failed');
-            _messages[index] = Message(
-              id: _messages[index].id,
-              chatId: _messages[index].chatId,
-              senderId: _messages[index].senderId,
-              text: _messages[index].text,
-              timestamp: _messages[index].timestamp,
-              isSending: false,
-              tempId: null,
-            );
-          }
-        });
-      }
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
+
+    setState(() => _isSending = true);
+    
+    final tempMessage = Message(
+      id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+      chatId: widget.chatId,
+      senderId: widget.userUID,
+      text: text,
+      timestamp: DateTime.now(),
+      isSending: true,
+      tempId: DateTime.now().millisecondsSinceEpoch.toString(),
+    );
+
+    setState(() {
+      _messages.add(tempMessage);
+      _messageController.clear();
     });
-  } catch (e, stackTrace) {
-    _printDebug('Error sending message: $e\n$stackTrace');
-    _showErrorSnackBar('Не удалось отправить сообщение. Проверьте соединение.');
-  } finally {
-    setState(() => _isSending = false);
+    
+    _scrollToBottom();
+    _setTypingStatus(false);
+
+    try {
+      if (_webSocketService != null) {
+        _webSocketService!.sendMessage(
+          chatId: widget.chatId,
+          text: text,
+        );
+      } else {
+        throw Exception('WebSocket not connected');
+      }
+      
+      Future.delayed(const Duration(seconds: 5), () {
+        if (mounted) {
+          setState(() {
+            final index = _messages.indexWhere((m) => m.tempId == tempMessage.tempId);
+            if (index != -1 && _messages[index].isSending) {
+              _messages[index] = Message(
+                id: _messages[index].id,
+                chatId: _messages[index].chatId,
+                senderId: _messages[index].senderId,
+                text: _messages[index].text,
+                timestamp: _messages[index].timestamp,
+                isSending: false,
+                tempId: null,
+              );
+            }
+          });
+        }
+      });
+    } catch (e) {
+      _showErrorSnackBar('Не удалось отправить сообщение. Проверьте соединение.');
+    } finally {
+      setState(() => _isSending = false);
+    }
   }
-}
 
   void _setTypingStatus(bool isTyping) {
     if (_isTyping != isTyping) {
@@ -253,12 +247,11 @@ void _sendMessage() {
       _typingDebounceTimer?.cancel();
       
       _typingDebounceTimer = Timer(const Duration(milliseconds: 500), () {
-        if (widget.webSocketService.isConnected) {
-          widget.webSocketService.sendTypingStatus(
+        if (_webSocketService != null && _webSocketService!.isConnected) {
+          _webSocketService!.sendTypingStatus(
             chatId: widget.chatId,
             isTyping: isTyping,
           );
-          _printDebug('Typing status: $isTyping');
         }
       });
     }
@@ -513,22 +506,22 @@ void _sendMessage() {
 
   @override
   void dispose() {
-    _printDebug('ChatScreen disposing');
-    
     _typingTimer?.cancel();
     _typingDebounceTimer?.cancel();
     
-    if (_isTyping) {
-      widget.webSocketService.sendTypingStatus(
+    if (_isTyping && _webSocketService != null) {
+      _webSocketService!.sendTypingStatus(
         chatId: widget.chatId,
         isTyping: false,
       );
     }
     
-    widget.webSocketService.onNewMessage = null;
-    widget.webSocketService.onUserTyping = null;
-    widget.webSocketService.onMessageSent = null;
-    widget.webSocketService.onMessageRead = null;
+    if (_webSocketService != null) {
+      _webSocketService!.onNewMessage = null;
+      _webSocketService!.onUserTyping = null;
+      _webSocketService!.onMessageSent = null;
+      _webSocketService!.onMessageRead = null;
+    }
     
     _messageController.dispose();
     _scrollController.dispose();

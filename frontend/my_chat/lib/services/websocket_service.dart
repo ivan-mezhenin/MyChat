@@ -568,34 +568,63 @@ class WebSocketService {
   }
 
   void dispose() {
-    _printDebug('Disposing WebSocketService');
-    
-    _isDisposed = true;
-    _manualDisconnect = true;
-    
-    _pingTimer?.cancel();
-    _pingTimer = null;
-    
-    _connectionCheckTimer?.cancel();
-    _connectionCheckTimer = null;
-    
-    _reconnectTimer?.cancel();
-    _reconnectTimer = null;
-    
-    _performDisconnect();
-    
-    try {
-      if (!_messageController.isClosed) _messageController.close();
-      if (!_typingController.isClosed) _typingController.close();
-      if (!_readController.isClosed) _readController.close();
-      if (!_connectionController.isClosed) _connectionController.close();
-    } catch (e) {
-      _printDebug('Error closing controllers: $e');
+  if (_isDisposed) return;
+  
+  _printDebug('Disposing WebSocketService');
+  
+  _isDisposed = true;
+  _manualDisconnect = true;
+  
+  _pingTimer?.cancel();
+  _pingTimer = null;
+  
+  _connectionCheckTimer?.cancel();
+  _connectionCheckTimer = null;
+  
+  _reconnectTimer?.cancel();
+  _reconnectTimer = null;
+  
+  try {
+    if (_channel != null) {
+      _channel!.sink.close(status.goingAway);
     }
-    
-    _connectionCompleter?.complete();
-    _connectionCompleter = null;
-    
-    _currentToken = null;
+  } catch (e) {
+    _printDebug('Error closing channel: $e');
   }
+  
+  _subscription?.cancel();
+  _subscription = null;
+  _channel = null;
+  
+  try {
+    if (!_messageController.isClosed) _messageController.close();
+  } catch (e) {
+    _printDebug('Error closing message controller: $e');
+  }
+  
+  try {
+    if (!_typingController.isClosed) _typingController.close();
+  } catch (e) {
+    _printDebug('Error closing typing controller: $e');
+  }
+  
+  try {
+    if (!_readController.isClosed) _readController.close();
+  } catch (e) {
+    _printDebug('Error closing read controller: $e');
+  }
+  
+  try {
+    if (!_connectionController.isClosed) _connectionController.close();
+  } catch (e) {
+    _printDebug('Error closing connection controller: $e');
+  }
+  
+  if (_connectionCompleter != null && !_connectionCompleter!.isCompleted) {
+    _connectionCompleter!.complete();
+  }
+  _connectionCompleter = null;
+  
+  _currentToken = null;
+}
 }

@@ -4,12 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:my_chat/services/auth_service.dart';
 import 'package:my_chat/screens/chats_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:my_chat/services/websocket_service.dart'; 
 
 class AuthenticationScreen extends StatefulWidget {
-  final WebSocketService? webSocketService;
-  
-  const AuthenticationScreen({super.key, this.webSocketService});
+  const AuthenticationScreen({super.key});
 
   @override
   State<AuthenticationScreen> createState() => _AuthenticationScreenState();
@@ -23,21 +20,16 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
   late AuthService _authService;
   bool _isLogin = true;
   bool _isProcessing = false;
-  WebSocketService? _webSocketService;
 
   @override
   void initState() {
     super.initState();
     _authService = AuthService();
-    _webSocketService = widget.webSocketService;
-    
-    _printDebug('AuthenticationScreen initState');
   }
 
   Future<void> _saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('auth_token', token);
-    _printDebug('Token saved to SharedPreferences');
   }
 
   Future<void> _authenticate() async {
@@ -45,7 +37,6 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
     if (!_validateInputs()) return;
     
     setState(() => _isProcessing = true);
-    _printDebug('Starting authentication...');
 
     try {
       if (_isLogin) {
@@ -58,7 +49,6 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
     } on TimeoutException {
       _showSnackBar('Превышено время ожидания');
     } catch (e, stackTrace) {
-      _printDebug('Authentication error: $e\n$stackTrace');
       _showSnackBar('Произошла ошибка: ${e.toString()}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
@@ -86,43 +76,25 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     
-    _printDebug('Attempting login for: $email');
-    
     final apiResponse = await _authService.login(email, password);
     
     if (apiResponse.success == true) {
       final loginResponse = apiResponse.data!;
-      _printDebug('Login successful! User: ${loginResponse.user.uid}, Chats: ${loginResponse.chats.length}');
       
       await _saveToken(loginResponse.token);
       
-      _webSocketService ??= WebSocketService();
-      
-      try {
-        _printDebug('Connecting WebSocket...');
-        await _webSocketService!.connect(loginResponse.token);
-        _printDebug('WebSocket connected');
-        
-        await Future.delayed(const Duration(milliseconds: 300));
-      } catch (e, stackTrace) {
-        _printDebug('WebSocket connection failed: $e\n$stackTrace');
-      }
-      
       if (mounted) {
-        _printDebug('Navigating to ChatsScreen...');
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (context) => ChatsScreen(
               chats: loginResponse.chats,
               userUID: loginResponse.user.uid,
-              webSocketService: _webSocketService!,
             ),
           ),
         );
       }
     } else {
-      _printDebug('Login failed: ${apiResponse.error}');
       _showSnackBar('Ошибка: ${apiResponse.error}');
     }
   }
@@ -132,8 +104,6 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     
-    _printDebug('Attempting registration: $username, $email');
-    
     final apiResponse = await _authService.register(
       username: username,
       email: email,
@@ -141,7 +111,6 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
     );
     
     if (apiResponse.success == true) {
-      _printDebug('Registration successful');
       _showSnackBar('Регистрация успешна! Войдите в аккаунт.');
       if (mounted) {
         setState(() {
@@ -150,7 +119,6 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
         });
       }
     } else {
-      _printDebug('Registration failed: ${apiResponse.error}');
       _showSnackBar('Ошибка: ${apiResponse.error}');
     }
   }
@@ -170,10 +138,6 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
         duration: const Duration(seconds: 3),
       ),
     );
-  }
-
-  void _printDebug(String message) {
-    debugPrint('[AuthScreen] $message');
   }
 
   @override
@@ -271,16 +235,9 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
 
   @override
   void dispose() {
-    _printDebug('AuthenticationScreen dispose');
-    
-    if (widget.webSocketService == null && _webSocketService != null) {
-      _webSocketService?.dispose();
-    }
-    
     _emailController.dispose();
     _passwordController.dispose();
     _usernameController.dispose();
-    
     super.dispose();
   }
 }

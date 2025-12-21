@@ -6,6 +6,8 @@ import 'package:my_chat/screens/chats_screen.dart';
 import 'package:my_chat/services/chat_service.dart';
 import 'package:my_chat/services/auth_service.dart';
 import 'package:my_chat/services/websocket_service.dart';
+import 'package:my_chat/websocket_manager.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
@@ -39,7 +41,7 @@ class AuthWrapper extends StatefulWidget {
 
 class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   Widget? _screen;
-  WebSocketService? _webSocketService;
+  final WebSocketManager _wsManager = WebSocketManager();
   StreamSubscription? _connectionSubscription;
   bool _isCheckingAuth = false;
 
@@ -55,18 +57,14 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     super.didChangeAppLifecycleState(state);
     
     if (state == AppLifecycleState.resumed) {
-      _printDebug('App resumed, checking connection...');
       _checkConnection();
-    } else if (state == AppLifecycleState.paused) {
-      _printDebug('App paused');
     }
   }
 
   Future<void> _initializeApp() async {
     try {
       await _checkAuthAndNavigate();
-    } catch (e, stackTrace) {
-      _printDebug('Error initializing app: $e\n$stackTrace');
+    } catch (e) {
       _handleError('Ошибка инициализации: ${e.toString()}');
     }
   }
@@ -99,11 +97,12 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
 
       final result = apiResponse.data!;
       
-      _webSocketService ??= WebSocketService();
-      
-      _setupWebSocketListeners();
-      
-      await _connectWebSocket(token);
+      try {
+        final wsService = await _wsManager.getService();
+        _setupWebSocketListeners(wsService);
+      } catch (e) {
+        debugPrint('WebSocket connection failed: $e');
+      }
 
       _navigateToChats(
         chats: result.chats,
@@ -113,8 +112,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     } on TimeoutException {
       await prefs.remove('auth_token');
       _handleError('Превышено время ожидания сервера');
-    } catch (e, stackTrace) {
-      _printDebug('Auth error: $e\n$stackTrace');
+    } catch (e) {
       await prefs.remove('auth_token');
       _handleError('Ошибка авторизации: ${e.toString()}');
     } finally {
@@ -122,17 +120,11 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     }
   }
 
-  void _setupWebSocketListeners() {
-    if (_webSocketService == null) return;
-    
-    _connectionSubscription = _webSocketService!.connectionStream.listen((connected) {
-      _printDebug('WebSocket connection status: $connected');
-      
+  void _setupWebSocketListeners(WebSocketService wsService) {
+    _connectionSubscription = wsService.connectionStream.listen((connected) {
       if (!connected && mounted) {
-        _printDebug('Connection lost, will try to reconnect...');
-        
         Future.delayed(const Duration(seconds: 2), () {
-          if (mounted && !_webSocketService!.isConnected) {
+          if (mounted) {
             _checkAndReconnect();
           }
         });
@@ -144,37 +136,26 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
     
-    if (token != null && _webSocketService != null && !_webSocketService!.isConnected) {
-      _printDebug('Attempting to reconnect WebSocket...');
+    if (token != null) {
       try {
-        await _webSocketService!.connect(token);
-        _printDebug('WebSocket reconnected');
+        await _wsManager.reconnect();
       } catch (e) {
-        _printDebug('WebSocket reconnection failed: $e');
+        debugPrint('WebSocket reconnection failed: $e');
       }
     }
   }
 
-  Future<void> _connectWebSocket(String token) async {
-    try {
-      await _webSocketService?.connect(token);
-      _printDebug('WebSocket connection initiated');
-      
-      await Future.delayed(const Duration(milliseconds: 500));
-    } catch (e, stackTrace) {
-      _printDebug('WebSocket connection error: $e\n$stackTrace');
-    }
-  }
-
   Future<void> _checkConnection() async {
-    if (_webSocketService != null && !_webSocketService!.isConnected) {
-      _printDebug('Checking and restoring connection...');
-      
+    if (!_wsManager.isConnected) {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('auth_token');
       
       if (token != null) {
-        await _connectWebSocket(token);
+        try {
+          await _wsManager.getService();
+        } catch (e) {
+          debugPrint('Connection restore failed: $e');
+        }
       }
     }
   }
@@ -182,39 +163,28 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   void _navigateToAuth() {
     if (!mounted) return;
     
-    _printDebug('Navigating to auth screen');
-    
-    setState(() {
-      _screen = AuthenticationScreen(webSocketService: _webSocketService);
-    });
-  }
-
-  void _navigateToChats({required List<Chat> chats, required String userUID}) {
-    if (!mounted || _webSocketService == null) return;
-    
-    _printDebug('Navigating to chats screen, user: $userUID, chats: ${chats.length}');
-    
-    setState(() {
-      _screen = ChatsScreen(
-        chats: chats,
-        userUID: userUID,
-        webSocketService: _webSocketService!,
-      );
-    });
-  }
-
-  void _handleError(String error) {
-    _printDebug(error);
-    
-    if (!mounted) return;
-    
     setState(() {
       _screen = const AuthenticationScreen();
     });
   }
 
-  void _printDebug(String message) {
-    debugPrint('[AuthWrapper] $message');
+  void _navigateToChats({required List<Chat> chats, required String userUID}) {
+    if (!mounted) return;
+    
+    setState(() {
+      _screen = ChatsScreen(
+        chats: chats,
+        userUID: userUID,
+      );
+    });
+  }
+
+  void _handleError(String error) {
+    if (!mounted) return;
+    
+    setState(() {
+      _screen = const AuthenticationScreen();
+    });
   }
 
   @override
@@ -233,9 +203,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     _connectionSubscription?.cancel();
     _connectionSubscription = null;
     
-    _printDebug('Disposing WebSocketService');
-    _webSocketService?.dispose();
-    _webSocketService = null;
+    _wsManager.dispose();
     
     super.dispose();
   }

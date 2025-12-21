@@ -4,16 +4,13 @@ import 'package:my_chat/services/contact_service.dart';
 import 'package:my_chat/services/chat_creator_service.dart';
 import 'package:my_chat/screens/chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:my_chat/services/websocket_service.dart';
 
 class CreateGroupChatScreen extends StatefulWidget {
   final String userUID;
-  final WebSocketService webSocketService;
 
   const CreateGroupChatScreen({
     super.key, 
     required this.userUID, 
-    required this.webSocketService,
   });
 
   @override
@@ -149,7 +146,6 @@ class _CreateGroupChatScreenState extends State<CreateGroupChatScreen> {
               chatId: chatId,
               chatName: chatName,
               userUID: widget.userUID,
-              webSocketService: widget.webSocketService,
             ),
           ),
         );

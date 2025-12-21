@@ -31,7 +31,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
   @override
   void initState() {
     super.initState();
-    debugPrint('ContactsScreen initState');
+    _printDebug('ContactsScreen initState');
     _initializeApp();
   }
 
@@ -50,13 +50,12 @@ class _ContactsScreenState extends State<ContactsScreen> {
       _contactService = ContactService(prefs: prefs);
       _chatCreationService = ChatCreationService(prefs: prefs);
       
-      debugPrint('Services initialized successfully');
+      _printDebug('Services initialized successfully');
       
       await _loadContacts();
       
     } catch (e, stackTrace) {
-      debugPrint('Error initializing ContactsScreen: $e');
-      debugPrint('Stack trace: $stackTrace');
+      _printDebug('Error initializing ContactsScreen: $e\n$stackTrace');
       
       if (mounted) {
         setState(() {
@@ -70,7 +69,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
   Future<void> _loadContacts() async {
     if (!mounted || _contactService == null) {
-      debugPrint('Cannot load contacts: service not initialized');
+      _printDebug('Cannot load contacts: service not initialized');
       return;
     }
     
@@ -80,7 +79,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
     });
 
     try {
-      debugPrint('Loading contacts...');
+      _printDebug('Loading contacts...');
       final response = await _contactService!.getContacts();
       
       if (mounted) {
@@ -90,16 +89,15 @@ class _ContactsScreenState extends State<ContactsScreen> {
           
           if (response.success) {
             _contacts = response.data ?? [];
-            debugPrint('Loaded ${_contacts.length} contacts');
+            _printDebug('Loaded ${_contacts.length} contacts');
           } else {
             _error = response.error ?? 'Не удалось загрузить контакты';
-            debugPrint('Error loading contacts: $_error');
+            _printDebug('Error loading contacts: $_error');
           }
         });
       }
     } catch (e, stackTrace) {
-      debugPrint('Exception in _loadContacts: $e');
-      debugPrint('Stack trace: $stackTrace');
+      _printDebug('Exception in _loadContacts: $e\n$stackTrace');
       
       if (mounted) {
         setState(() {
@@ -160,17 +158,21 @@ class _ContactsScreenState extends State<ContactsScreen> {
     
     try {
       final response = await _chatCreationService!.createPrivateChat(contact.id);
+      
       if (!mounted) return;
       Navigator.pop(context);
       
       if (response.success) {
         final chat = response.data!;
+        _printDebug('Private chat created: ${chat.id}');
         _openChatScreen(chat.id, chat.name);
       } else {
         _showSnackBar('Ошибка: ${response.error}');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      if (!mounted) return;
       Navigator.pop(context);
+      _printDebug('Error creating chat: $e\n$stackTrace');
       _showSnackBar('Ошибка при создании чата: ${e.toString()}');
     }
   }
@@ -219,17 +221,23 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   void _openChatScreen(String chatId, String chatName) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatScreen(
-          chatId: chatId,
-          chatName: chatName,
-          userUID: widget.userUID,
-          webSocketService: widget.webSocketService, 
-        ),
-      ),
-    );
+    Navigator.pop(context);
+    
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatScreen(
+              chatId: chatId,
+              chatName: chatName,
+              userUID: widget.userUID,
+              webSocketService: widget.webSocketService, 
+            ),
+          ),
+        );
+      }
+    });
   }
 
   void _showLoadingDialog(String message) {
@@ -241,7 +249,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
           children: [
             const CircularProgressIndicator(),
             const SizedBox(width: 16),
-            Text(message),
+            Flexible(
+              child: Text(
+                message,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
+              ),
+            ),
           ],
         ),
       ),
@@ -249,12 +263,18 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   void _showSnackBar(String message) {
+    if (!mounted) return;
+    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         duration: const Duration(seconds: 3),
       ),
     );
+  }
+
+  void _printDebug(String message) {
+    debugPrint('[ContactsScreen] $message');
   }
 
   Widget _buildContactList() {
@@ -279,16 +299,19 @@ class _ContactsScreenState extends State<ContactsScreen> {
       );
     }
 
-    return ListView.builder(
-      itemCount: _contacts.length,
-      itemBuilder: (context, index) {
-        final contact = _contacts[index];
-        return ContactListItem(
-          contact: contact,
-          onTap: () => _startPrivateChat(contact),
-          onDelete: () => _deleteContact(contact),
-        );
-      },
+    return RefreshIndicator(
+      onRefresh: _loadContacts,
+      child: ListView.builder(
+        itemCount: _contacts.length,
+        itemBuilder: (context, index) {
+          final contact = _contacts[index];
+          return ContactListItem(
+            contact: contact,
+            onTap: () => _startPrivateChat(contact),
+            onDelete: () => _deleteContact(contact),
+          );
+        },
+      ),
     );
   }
 
@@ -315,10 +338,15 @@ class _ContactsScreenState extends State<ContactsScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              'Ошибка: $_error',
-              style: const TextStyle(color: Colors.red),
-              textAlign: TextAlign.center,
+            const Icon(Icons.error_outline, size: 60, color: Colors.red),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                _error,
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
             ),
             const SizedBox(height: 16),
             ElevatedButton(
@@ -362,7 +390,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
   @override
   void dispose() {
-    debugPrint('ContactsScreen dispose');
+    _printDebug('ContactsScreen dispose');
     
     _contactService?.dispose();
     _chatCreationService?.dispose();
@@ -396,8 +424,14 @@ class ContactListItem extends StatelessWidget {
       title: Text(
         contact.displayName,
         style: const TextStyle(fontWeight: FontWeight.bold),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
-      subtitle: Text(contact.contactEmail),
+      subtitle: Text(
+        contact.contactEmail,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       trailing: PopupMenuButton<String>(
         onSelected: (value) {
           if (value == 'delete') onDelete();
@@ -410,7 +444,7 @@ class ContactListItem extends StatelessWidget {
               children: [
                 Icon(Icons.chat, size: 20),
                 SizedBox(width: 8),
-                Text('Start Chat'),
+                Text('Написать сообщение'),
               ],
             ),
           ),
@@ -420,7 +454,7 @@ class ContactListItem extends StatelessWidget {
               children: [
                 Icon(Icons.delete, size: 20, color: Colors.red),
                 SizedBox(width: 8),
-                Text('Delete', style: TextStyle(color: Colors.red)),
+                Text('Удалить', style: TextStyle(color: Colors.red)),
               ],
             ),
           ),
@@ -432,7 +466,8 @@ class ContactListItem extends StatelessWidget {
 }
 
 class AddContactDialog extends StatefulWidget {
-    const AddContactDialog({super.key});
+  const AddContactDialog({super.key});
+  
   @override
   State<AddContactDialog> createState() => _AddContactDialogState();
 }
@@ -445,7 +480,7 @@ class _AddContactDialogState extends State<AddContactDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Add Contact'),
+      title: const Text('Добавить контакт'),
       content: Form(
         key: _formKey,
         child: Column(
@@ -461,10 +496,10 @@ class _AddContactDialogState extends State<AddContactDialog> {
               keyboardType: TextInputType.emailAddress,
               validator: (value) {
                 if (value == null || value.isEmpty) {
-                  return 'Please enter email';
+                  return 'Введите email';
                 }
-                if (!value.contains('@')) {
-                  return 'Please enter a valid email';
+                if (!value.contains('@') || !value.contains('.')) {
+                  return 'Введите корректный email';
                 }
                 return null;
               },
@@ -473,8 +508,8 @@ class _AddContactDialogState extends State<AddContactDialog> {
             TextFormField(
               controller: _notesController,
               decoration: const InputDecoration(
-                labelText: 'Notes (optional)',
-                hintText: 'e.g., Colleague from work',
+                labelText: 'Заметки (необязательно)',
+                hintText: 'Например, коллега с работы',
                 prefixIcon: Icon(Icons.note),
               ),
               maxLines: 2,
@@ -485,7 +520,7 @@ class _AddContactDialogState extends State<AddContactDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: const Text('Отмена'),
         ),
         ElevatedButton(
           onPressed: () {
@@ -496,7 +531,7 @@ class _AddContactDialogState extends State<AddContactDialog> {
               });
             }
           },
-          child: const Text('Add'),
+          child: const Text('Добавить'),
         ),
       ],
     );

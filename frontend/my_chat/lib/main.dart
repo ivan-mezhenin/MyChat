@@ -7,10 +7,9 @@ import 'package:my_chat/services/chat_service.dart';
 import 'package:my_chat/services/auth_service.dart';
 import 'package:my_chat/services/websocket_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  
   runApp(const MyChatApp());
 }
 
@@ -40,7 +39,6 @@ class AuthWrapper extends StatefulWidget {
 
 class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   Widget? _screen;
-  String? _error;
   WebSocketService? _webSocketService;
   StreamSubscription? _connectionSubscription;
   bool _isCheckingAuth = false;
@@ -101,12 +99,10 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
 
       final result = apiResponse.data!;
       
-      // Создаем новый WebSocketService если нет
       _webSocketService ??= WebSocketService();
       
       _setupWebSocketListeners();
       
-      // Подключаем WebSocket
       await _connectWebSocket(token);
 
       _navigateToChats(
@@ -126,63 +122,47 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     }
   }
 
-void _setupWebSocketListeners() {
-  if (_webSocketService == null) return;
-  
-  _connectionSubscription = _webSocketService!.connectionStream.listen((connected) {
-    _printDebug('WebSocket connection status: $connected');
+  void _setupWebSocketListeners() {
+    if (_webSocketService == null) return;
     
-    if (!connected && mounted) {
-      _printDebug('Connection lost, will try to reconnect...');
+    _connectionSubscription = _webSocketService!.connectionStream.listen((connected) {
+      _printDebug('WebSocket connection status: $connected');
       
-      // Попытка переподключения с задержкой
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted && !_webSocketService!.isConnected) {
-          _checkAndReconnect();
-        }
-      });
-    }
-  });
-}
-Future<void> _checkAndReconnect() async {
-  final prefs = await SharedPreferences.getInstance();
-  final token = prefs.getString('auth_token');
-  
-  if (token != null && _webSocketService != null && !_webSocketService!.isConnected) {
-    _printDebug('Attempting to reconnect WebSocket...');
-    try {
-      await _webSocketService!.connect(token);
-      _printDebug('WebSocket reconnected');
-    } catch (e) {
-      _printDebug('WebSocket reconnection failed: $e');
+      if (!connected && mounted) {
+        _printDebug('Connection lost, will try to reconnect...');
+        
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted && !_webSocketService!.isConnected) {
+            _checkAndReconnect();
+          }
+        });
+      }
+    });
+  }
+
+  Future<void> _checkAndReconnect() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');
+    
+    if (token != null && _webSocketService != null && !_webSocketService!.isConnected) {
+      _printDebug('Attempting to reconnect WebSocket...');
+      try {
+        await _webSocketService!.connect(token);
+        _printDebug('WebSocket reconnected');
+      } catch (e) {
+        _printDebug('WebSocket reconnection failed: $e');
+      }
     }
   }
-}
 
   Future<void> _connectWebSocket(String token) async {
     try {
       await _webSocketService?.connect(token);
       _printDebug('WebSocket connection initiated');
       
-      // Ждем подключения
       await Future.delayed(const Duration(milliseconds: 500));
     } catch (e, stackTrace) {
       _printDebug('WebSocket connection error: $e\n$stackTrace');
-      // Не блокируем навигацию при ошибке WebSocket
-    }
-  }
-
-  Future<void> _scheduleReconnect() async {
-    await Future.delayed(const Duration(seconds: 2));
-    
-    if (!mounted || _webSocketService == null) return;
-    
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token');
-    
-    if (token != null && _webSocketService!.isConnected == false) {
-      _printDebug('Attempting to reconnect WebSocket...');
-      await _connectWebSocket(token);
     }
   }
 
@@ -229,7 +209,6 @@ Future<void> _checkAndReconnect() async {
     if (!mounted) return;
     
     setState(() {
-      _error = error;
       _screen = const AuthenticationScreen();
     });
   }

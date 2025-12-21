@@ -110,7 +110,18 @@ class _AuthWrapperState extends State<AuthWrapper> {
         debugPrint('WebSocket disconnected');
       }
     });
+      _webSocketService!.onNewChat = (data) {
+    _handleNewChat(data);
+  };
   }
+
+  void _handleNewChat(Map<String, dynamic> data) {
+  // Обновите экран чатов или покажите уведомление
+  if (_screen is ChatsScreen) {
+    final chatScreen = _screen as ChatsScreen;
+    // Нужно добавить метод обновления в ChatsScreen
+  }
+}
 
   Future<void> _connectWebSocket(String token) async {
     try {

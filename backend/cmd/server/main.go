@@ -7,6 +7,7 @@ import (
 
 	"MyChatServer/internal/authentication"
 	"MyChatServer/internal/chat"
+	"MyChatServer/internal/contact"
 	"MyChatServer/internal/database"
 	"MyChatServer/internal/registration"
 	"MyChatServer/internal/websocket"
@@ -52,9 +53,21 @@ func main() {
 	e.POST("/api/auth/login", authHandler.LoginHandler)
 	e.GET("/api/auth/initial-data", authHandler.VerifyAndGetChatsHandler)
 
-	chatService := chat.NewService(db)
+	chatService := chat.NewService(db, wsServer)
 	chatHandler := chat.NewHandler(chatService)
 	e.GET("/api/chats/:chatId/messages", chatHandler.GetMessages)
+
+	contactService := contact.NewContactService(db)
+	contactHandler := contact.NewContactHandler(contactService)
+
+	e.GET("/api/contacts", contactHandler.GetContacts)
+	e.POST("/api/contacts", contactHandler.AddContact)
+	e.DELETE("/api/contacts/:contactId", contactHandler.DeleteContact)
+	e.GET("/api/contacts/search", contactHandler.SearchUsers)
+	e.GET("/api/chats/contacts", chatHandler.GetUserContacts)
+
+	e.POST("/api/chats/create-from-contacts", chatHandler.CreateChatFromContacts)
+	e.POST("/api/chats/create-private/:contactId", chatHandler.CreatePrivateChat)
 
 	port := os.Getenv("PORT")
 	if port == "" {

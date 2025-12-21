@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
@@ -59,6 +60,17 @@ func (s *Server) HandleConnection(w http.ResponseWriter, r *http.Request) {
 	s.clients[userUID] = client
 	s.mu.Unlock()
 
+	connection.SetPongHandler(func(string) error {
+		s.mu.Lock()
+		if client, exists := s.clients[userUID]; exists {
+			client.LastSeen = time.Now()
+		}
+		s.mu.Unlock()
+		return nil
+	})
+
+	go s.startPing(client)
+
 	go s.setupUserListeners(userUID)
 
 	s.handleClientMessages(client)
@@ -80,7 +92,22 @@ func (s *Server) SendToUser(userID string, event WSEvent) error {
 	}
 
 	client.LastSeen = time.Now()
-	return client.Connection.WriteJSON(event)
+
+	client.Connection.SetWriteDeadline(time.Now().Add(5 * time.Second))
+
+	err := client.Connection.WriteJSON(event)
+
+	client.Connection.SetWriteDeadline(time.Time{})
+
+	if err != nil {
+		log.Printf("Failed to send %s to user %s: %v", event.Type, userID, err)
+
+		go client.Connection.Close()
+		return err
+	}
+
+	log.Printf("Successfully sent %s to user %s", event.Type, userID)
+	return nil
 }
 
 func (s *Server) BroadcastToChat(chatID string, event WSEvent, excludeUserID string) (int, error) {
@@ -111,6 +138,8 @@ func (s *Server) BroadcastToChat(chatID string, event WSEvent, excludeUserID str
 }
 
 func (s *Server) handleClientMessages(client *Client) {
+
+	client.Connection.SetReadDeadline(time.Time{})
 	for {
 		var event WSEvent
 		if err := client.Connection.ReadJSON(&event); err != nil {
@@ -134,6 +163,8 @@ func (s *Server) handleIncomingEvent(userID string, event WSEvent) {
 		s.handleTyping(userID, event)
 	case "message_read":
 		s.handleMessageRead(userID, event)
+	case "ping":
+		s.handlePing(userID, event)
 	default:
 		log.Printf("Unknown event type from user %s: %s", userID, event.Type)
 	}
@@ -163,5 +194,81 @@ func (s *Server) Stop() {
 	for userID, client := range s.clients {
 		client.Connection.Close()
 		delete(s.clients, userID)
+	}
+}
+
+func (s *Server) BroadcastChatCreated(chatID string, chatData map[string]interface{}) error {
+	participants, ok := chatData["participants"].([]interface{})
+	if !ok {
+		return fmt.Errorf("invalid participants format")
+	}
+
+	event := WSEvent{
+		Type:   "chat_created",
+		ChatID: chatID,
+		Data:   chatData,
+	}
+
+	participantIDs := make([]string, len(participants))
+	for i, p := range participants {
+		if str, ok := p.(string); ok {
+			participantIDs[i] = str
+		}
+	}
+
+	sentCount := 0
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, userID := range participantIDs {
+		if client, exists := s.clients[userID]; exists {
+			if err := client.Connection.WriteJSON(event); err != nil {
+				log.Printf("Failed to send chat_created to user %s: %v", userID, err)
+				continue
+			}
+			sentCount++
+			log.Printf("Sent chat_created event to user %s for chat %s", userID, chatID)
+		}
+	}
+
+	log.Printf("Broadcasted chat %s creation to %d/%d users",
+		chatID, sentCount, len(participantIDs))
+	return nil
+}
+
+func (s *Server) GetClients() map[string]*Client {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	clientsCopy := make(map[string]*Client)
+	maps.Copy(clientsCopy, s.clients)
+	return clientsCopy
+}
+
+func (s *Server) SendToUserSafe(userID string, event WSEvent) error {
+	return s.SendToUser(userID, event)
+}
+
+func (s *Server) startPing(client *Client) {
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		s.mu.RLock()
+		_, exists := s.clients[client.UserID]
+		s.mu.RUnlock()
+
+		if !exists {
+			return
+		}
+
+		client.Connection.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		err := client.Connection.WriteMessage(websocket.PingMessage, []byte{})
+		client.Connection.SetWriteDeadline(time.Time{})
+
+		if err != nil {
+			log.Printf("Failed to send ping to user %s: %v", client.UserID, err)
+			return
+		}
 	}
 }

@@ -37,3 +37,19 @@ type Message struct {
 	Text      string    `json:"text"`
 	Timestamp time.Time `json:"timestamp"`
 }
+
+type ChatCreatedEvent struct {
+	ChatID       string    `json:"chat_id"`
+	ChatName     string    `json:"chat_name"`
+	ChatType     string    `json:"chat_type"`
+	CreatedBy    string    `json:"created_by"`
+	CreatedAt    time.Time `json:"created_at"`
+	Participants []string  `json:"participants"`
+}
+
+type ChatEvent struct {
+	Type   string      `json:"type"`
+	ChatID string      `json:"chat_id,omitempty"`
+	UserID string      `json:"user_id,omitempty"`
+	Data   interface{} `json:"data"`
+}

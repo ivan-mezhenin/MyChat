@@ -104,7 +104,7 @@ jobs:
     - name: Build APK (debug)
       working-directory: ./frontend
       run: flutter build apk --debug
-      continue-on-error: true
+      continue-on-error: true 
 
   status-check:
     name: Status Check

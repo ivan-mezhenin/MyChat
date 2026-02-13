@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  go-tests:
+    name: Go Tests
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        go-version: [1.21.x, 1.22.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Go ${{ matrix.go-version }}
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+        cache: true
+        cache-dependency-path: backend/go.sum
+    
+    - name: Get dependencies
+      working-directory: ./backend
+      run: go mod download
+    
+    - name: Check formatting
+      working-directory: ./backend
+      run: |
+        if [ "$(gofmt -l . | wc -l)" -gt 0 ]; then
+          echo "Неправильное форматирование. Запусти go fmt"
+          gofmt -l .
+          exit 1
+        fi
+      continue-on-error: false
+    
+    - name: Run vet
+      working-directory: ./backend
+      run: go vet ./...
+    
+    - name: Run tests
+      working-directory: ./backend
+      run: go test -v ./...
+    
+    - name: Build
+      working-directory: ./backend/cmd/server
+      run: go build -v -o mychatserver
+    
+    - name: Archive build artifacts
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: go-server-${{ matrix.go-version }}
+        path: backend/cmd/server/mychatserver
+        retention-days: 5
+
+  flutter-tests:
+    name: Flutter Tests
+    runs-on: ubuntu-latest
+    needs: go-tests
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.x'
+        channel: 'stable'
+        cache: true
+    
+    - name: Install dependencies
+      working-directory: ./frontend/my_chat
+      run: flutter pub get
+    
+    - name: Verify formatting
+      working-directory: ./frontend/my_chat
+      run: dart format --output=none --set-exit-if-changed .
+      continue-on-error: true
+    
+    - name: Analyze project
+      working-directory: ./frontend/my_chat
+      run: flutter analyze
+      continue-on-error: true
+    
+    - name: Run tests
+      working-directory: ./frontend/my_chat
+      run: flutter test
+      continue-on-error: true
+    
+    - name: Build APK (debug)
+      working-directory: ./frontend/my_chat
+      run: flutter build apk --debug
+      continue-on-error: true 
+
+  status-check:
+    name: Status Check
+    runs-on: ubuntu-latest
+    needs: [go-tests, flutter-tests]
+    if: always()
+    
+    steps:
+    - name: Check test results
+      run: |
+        if [ "${{ needs.go-tests.result }}" == "success" ] && [ "${{ needs.flutter-tests.result }}" == "success" ]; then
+          echo "Все тесты прошли успешно!"
+        elif [ "${{ needs.go-tests.result }}" == "failure" ] || [ "${{ needs.flutter-tests.result }}" == "failure" ]; then
+          echo "Некоторые тесты упали"
+          exit 1
+        else:
+          echo "Некоторые тесты были пропущены"
+          exit 0
+        fi

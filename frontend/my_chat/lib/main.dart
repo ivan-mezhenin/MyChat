@@ -111,10 +111,10 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
       
     } on TimeoutException {
       await prefs.remove('auth_token');
-      _handleError('Превышено время ожидания сервера');
+      _handleError('Server timeout exceeded');
     } catch (e) {
       await prefs.remove('auth_token');
-      _handleError('Ошибка авторизации: ${e.toString()}');
+      _handleError('Authorization error: ${e.toString()}');
     } finally {
       _isCheckingAuth = false;
     }

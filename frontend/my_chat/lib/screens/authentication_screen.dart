@@ -48,7 +48,7 @@ class _AuthenticationScreenState extends State<AuthenticationScreen> {
       _showSnackBar('Нет подключения к интернету');
     } on TimeoutException {
       _showSnackBar('Превышено время ожидания');
-    } catch (e, stackTrace) {
+    } catch (e) {
       _showSnackBar('Произошла ошибка: ${e.toString()}');
     } finally {
       if (mounted) setState(() => _isProcessing = false);

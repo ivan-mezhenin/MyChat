@@ -52,12 +52,6 @@ jobs:
       working-directory: ./backend/cmd/server
       run: go build -v -o mychatserver
     
-    - name: Upload coverage
-      if: success()
-      working-directory: ./backend
-      run: |
-        go test -coverprofile=coverage.txt -covermode=atomic ./...
-    
     - name: Archive build artifacts
       if: success()
       uses: actions/upload-artifact@v4

@@ -97,11 +97,11 @@ class ChatServiceConfig {
   });
 
   factory ChatServiceConfig.development() => ChatServiceConfig(
-        baseUrl: 'http://192.168.1.104:8080',
+        baseUrl: 'http://91.197.0.41:8080',
       );
 
   factory ChatServiceConfig.production() => ChatServiceConfig(
-        baseUrl: 'https://api.yourdomain.com',
+        baseUrl: 'http://91.197.0.41:8080',
       );
 }
 

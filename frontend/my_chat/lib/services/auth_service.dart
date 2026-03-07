@@ -10,11 +10,11 @@ class ApiConfig {
   };
 
   factory ApiConfig.development() => ApiConfig(
-        baseUrl: 'http://192.168.1.104:8080',
+        baseUrl: 'http://91.197.0.41:8080',
       );
 
   factory ApiConfig.production() => ApiConfig(
-        baseUrl: 'https://api.yourdomain.com',
+        baseUrl: 'http://91.197.0.41:8080',
       );
 
   const ApiConfig({

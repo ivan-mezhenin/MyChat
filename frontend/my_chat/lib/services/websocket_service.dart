@@ -44,11 +44,11 @@ class WebSocketConfig {
   });
 
   factory WebSocketConfig.development() => WebSocketConfig(
-        baseUrl: 'ws://192.168.1.104:8080',
+        baseUrl: 'ws://91.197.0.41:8080',
       );
 
   factory WebSocketConfig.production() => WebSocketConfig(
-        baseUrl: 'wss://api.yourdomain.com',
+        baseUrl: 'wss://91.197.0.41:8080',
       );
 }
 

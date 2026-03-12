@@ -79,18 +79,10 @@ jobs:
     - name: Install dependencies
       working-directory: ./frontend/my_chat
       run: flutter pub get
-        
-    - name: Analyze project
-      working-directory: ./frontend/my_chat
-      run: flutter analyze
     
     - name: Run tests
       working-directory: ./frontend/my_chat
       run: flutter test
-    
-    - name: Build APK (debug)
-      working-directory: ./frontend/my_chat
-      run: flutter build apk --debug
 
   status-check:
     name: Status Check

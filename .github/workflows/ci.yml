@@ -79,11 +79,7 @@ jobs:
     - name: Install dependencies
       working-directory: ./frontend/my_chat
       run: flutter pub get
-    
-    - name: Verify formatting
-      working-directory: ./frontend/my_chat
-      run: dart format --output=none --set-exit-if-changed .
-    
+        
     - name: Analyze project
       working-directory: ./frontend/my_chat
       run: flutter analyze

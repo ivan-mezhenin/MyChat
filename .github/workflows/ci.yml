@@ -80,25 +80,9 @@ jobs:
       working-directory: ./frontend/my_chat
       run: flutter pub get
     
-    - name: Verify formatting
-      working-directory: ./frontend/my_chat
-      run: dart format --output=none --set-exit-if-changed .
-      continue-on-error: true
-    
-    - name: Analyze project
-      working-directory: ./frontend/my_chat
-      run: flutter analyze
-      continue-on-error: true
-    
     - name: Run tests
       working-directory: ./frontend/my_chat
       run: flutter test
-      continue-on-error: true
-    
-    - name: Build APK (debug)
-      working-directory: ./frontend/my_chat
-      run: flutter build apk --debug
-      continue-on-error: true 
 
   status-check:
     name: Status Check

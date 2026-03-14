@@ -5,6 +5,8 @@ import 'package:my_chat/services/chat_creator_service.dart';
 import 'package:my_chat/screens/chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Screen for viewing and managing user's contacts.
+/// Allows adding new contacts and starting private chats.
 class ContactsScreen extends StatefulWidget {
   final String userUID;
 

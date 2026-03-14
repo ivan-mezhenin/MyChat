@@ -15,6 +15,9 @@ void main() async {
   runApp(const MyChatApp());
 }
 
+/// Root widget of the application.
+/// Decides whether to show authentication screen or chats screen
+/// based on authentication status.
 class MyChatApp extends StatelessWidget {
   const MyChatApp({super.key});
 

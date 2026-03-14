@@ -11,6 +11,9 @@ import (
 	"cloud.google.com/go/firestore"
 )
 
+// Service contains business logic for chat operations:
+// creating chats, sending messages, retrieving message history,
+// checking participant access.
 type Service struct {
 	db       *database.Client
 	wsServer *websocket.Server

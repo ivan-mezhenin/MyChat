@@ -106,6 +106,8 @@ class AuthServiceException implements Exception {
   String toString() => 'AuthServiceException: $message${statusCode != null ? ' ($statusCode)' : ''}';
 }
 
+/// Handles user authentication (login, registration, token verification)
+/// with the backend via HTTP requests.
 class AuthService {
   final ApiConfig _config;
   final http.Client _client;

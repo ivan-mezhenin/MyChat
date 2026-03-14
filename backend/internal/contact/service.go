@@ -13,6 +13,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// ContactService manages user's contact list:
+// adding, removing, searching users, checking if contact already exists.
 type ContactService struct {
 	db *database.Client
 }

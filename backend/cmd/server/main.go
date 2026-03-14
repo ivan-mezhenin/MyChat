@@ -16,6 +16,9 @@ import (
 	"github.com/labstack/echo/middleware"
 )
 
+// Entry point of the chat server application.
+// Initializes Firebase, sets up Echo web framework routes
+// and starts WebSocket + REST API server.
 func main() {
 	ctx := context.Background()
 

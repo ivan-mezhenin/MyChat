@@ -125,6 +125,8 @@ class NetworkException extends ChatServiceException {
     : super(message ?? 'Network error occurred');
 }
 
+/// Manages chat-related operations:
+/// loading initial chats, fetching messages, sending messages.
 class ChatService {
   final ChatServiceConfig _config;
   final SharedPreferences _prefs;

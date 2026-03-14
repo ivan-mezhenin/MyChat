@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:my_chat/models/contact.dart';
 import 'chat_service.dart';
 
+/// Provides operations with user's contact list:
+/// get contacts, add contact, delete contact, search users.
 class ContactService {
   final ChatServiceConfig _config;
   final SharedPreferences _prefs;

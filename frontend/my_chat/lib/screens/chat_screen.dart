@@ -5,6 +5,9 @@ import 'package:my_chat/services/websocket_service.dart';
 import 'package:my_chat/websocket_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Single chat conversation screen.
+/// Displays message history, allows sending messages,
+/// shows typing indicators and read status.
 class ChatScreen extends StatefulWidget {
   final String chatId;
   final String chatName;

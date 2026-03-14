@@ -78,6 +78,10 @@ func main() {
 		return c.JSON(http.StatusOK, map[string]interface{}{})
 	})
 
+	e.HEAD("/health", func(c echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	})
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

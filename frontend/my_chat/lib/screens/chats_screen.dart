@@ -8,6 +8,8 @@ import 'package:my_chat/screens/chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:my_chat/screens/authentication_screen.dart';
 
+/// Main screen showing list of user's chats.
+/// Supports real-time updates via WebSocket.
 class ChatsScreen extends StatefulWidget {
   final List<Chat> chats;
   final String userUID;

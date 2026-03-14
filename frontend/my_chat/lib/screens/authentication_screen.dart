@@ -5,6 +5,7 @@ import 'package:my_chat/services/auth_service.dart';
 import 'package:my_chat/screens/chats_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Authentication screen (login + registration form).
 class AuthenticationScreen extends StatefulWidget {
   const AuthenticationScreen({super.key});
 

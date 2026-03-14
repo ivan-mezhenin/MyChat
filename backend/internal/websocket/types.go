@@ -22,6 +22,9 @@ type Client struct {
 	LastSeen   time.Time
 }
 
+// Server manages all WebSocket connections:
+// authenticates users, handles real-time messages,
+// broadcasts events (new message, typing, new chat, etc.).
 type Server struct {
 	mu            *sync.RWMutex
 	clients       map[string]*Client

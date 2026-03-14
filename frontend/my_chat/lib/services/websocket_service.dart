@@ -52,6 +52,9 @@ class WebSocketConfig {
       );
 }
 
+/// Manages persistent WebSocket connection to the server.
+/// Handles real-time events: new messages, typing indicators,
+/// read receipts, connection state changes.
 class WebSocketService {
   final WebSocketConfig _config;
   String? _currentToken;

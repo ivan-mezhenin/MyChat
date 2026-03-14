@@ -8,6 +8,8 @@ import (
 	"MyChatServer/internal/database"
 )
 
+// Service is responsible for new user registration:
+// creates user in Firebase Auth and saves profile in Firestore.
 type Service struct {
 	db *database.Client
 }

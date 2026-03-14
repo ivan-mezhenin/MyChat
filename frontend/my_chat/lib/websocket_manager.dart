@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:my_chat/services/websocket_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Singleton manager that controls lifecycle of WebSocketService instance.
+/// Implements reconnection logic and token management.
 class WebSocketManager {
   static final WebSocketManager _instance = WebSocketManager._internal();
   factory WebSocketManager() => _instance;

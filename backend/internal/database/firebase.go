@@ -11,6 +11,9 @@ import (
 	"google.golang.org/api/option"
 )
 
+// Client provides unified access to Firebase services:
+// Authentication (token validation, user management)
+// and Firestore (data storage and queries).
 type Client struct {
 	Auth      *auth.Client
 	Firestore *firestore.Client

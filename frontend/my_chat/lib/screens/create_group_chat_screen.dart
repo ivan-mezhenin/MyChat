@@ -5,6 +5,8 @@ import 'package:my_chat/services/chat_creator_service.dart';
 import 'package:my_chat/screens/chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Screen for creating new group chat.
+/// Lets user select multiple contacts and set group name.
 class CreateGroupChatScreen extends StatefulWidget {
   final String userUID;
 

@@ -12,6 +12,8 @@ import (
 	"MyChatServer/internal/database"
 )
 
+// Service handles user authentication logic:
+// Firebase sign-in, token validation, fetching user data and initial chats.
 type Service struct {
 	db *database.Client
 }

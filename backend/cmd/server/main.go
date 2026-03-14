@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 
 	"MyChatServer/internal/authentication"
@@ -71,6 +72,11 @@ func main() {
 
 	e.POST("/api/chats/create-from-contacts", chatHandler.CreateChatFromContacts)
 	e.POST("/api/chats/create-private/:contactId", chatHandler.CreatePrivateChat)
+
+	// Health check endpoint
+	e.GET("/health", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]interface{}{})
+	})
 
 	port := os.Getenv("PORT")
 	if port == "" {

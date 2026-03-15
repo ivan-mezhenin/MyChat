@@ -1,7 +1,7 @@
-ID Уязвимости,Компонент, Описание, Исправлено в,
-GO-2026-4341, Стандартная библиотека(net/url), Memory exhaustion при парсинге параметров запроса,Go 1.25.6,
-GO-2026-4340, Стандартная библиотека(crypto/tls),Handshake messages processed at incorrect encryption level,Go 1.25.6,
-GO-2026-4337, Стандартная библиотека(crypto/tls),Unexpected session resumption,Go 1.25.7,
-GO-2025-4175, Стандартная библиотека(crypto/x509), Ошибка проверки DNS-имени,Go 1.25.5,
-GO-2025-4155, Стандартная библиотека(crypto/x509), Excessive resource consumption,Go 1.25,
-GO-2026-4394, go.opentelemetry.io/otel/sdk,Arbitrary Code Execution via PATH Hijacking,v1.40.0,
+Компонент , Версия , Статус , Комментарий 
+Go , 1.26.0 ,  Безопасно , Все уязвимости стандартной библиотеки исправлены
+github.com/labstack/echo , v4.11.1 ,  Безопасно , Критических уязвимостей не обнаружено 
+seqsplitgithub.com/gorilla/websocket , v1.5.0 ,  Безопасно , Используется актуальная версия 
+seqsplitcloud.google.com/go/firestore , v1.14.0 ,  Безопасно , Уязвимости отсутствуют 
+firebase.google.com/go , v3.13.0 ,  Безопасно , Уязвимости отсутствуют 
+seqsplitgo.opentelemetry.io/otel/sdk , v1.40.0 ,  Безопасно , Обновлено с v1.37.0 

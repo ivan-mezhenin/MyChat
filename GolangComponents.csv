@@ -1,0 +1,7 @@
+ID Уязвимости,Компонент, Описание, Исправлено в
+GO-2026-4341, Стандартная библиотека,(net/url), Memory exhaustion при парсинге параметров запроса,Go 1.25.6
+GO-2026-4340, Стандартная библиотека,(crypto/tls),Handshake messages processed at incorrect encryption level,Go 1.25.6
+GO-2026-4337, Стандартная библиотека,(crypto/tls),Unexpected session resumption,Go 1.25.7
+GO-2025-4175, Стандартная библиотека,(crypto/x509), Ошибка проверки DNS-имени,Go 1.25.5 
+GO-2025-4155, Стандартная библиотека,(crypto/x509), Excessive resource consumption,Go 1.25
+GO-2026-4394, go.opentelemetry.io/otel/sdk,Arbitrary Code Execution via PATH Hijacking,v1.40.0

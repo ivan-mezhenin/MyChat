@@ -80,7 +80,7 @@ https://github.com/ivan-mezhenin/MyChat/releases
 #### Linux
 - Скачайте: `MyChat-linux.tar.gz`
 - Распакуйте архив и запустите исполняемый файл `MyChat`
-#### MacOS
+#### macOS
 
 - Скачайте: `MyChat-macos.app.zip`
 - Распакуйте архив и запустите приложение `MyChat.app`

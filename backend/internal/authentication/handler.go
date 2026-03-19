@@ -2,6 +2,7 @@ package authentication
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -63,17 +64,22 @@ func (h *Handler) LoginHandler(c echo.Context) error {
 	response, err := h.service.Login(c.Request().Context(), req.Email, req.Password)
 	if err != nil {
 		errorMsg := err.Error()
+
+		var clientError string
 		if strings.Contains(errorMsg, "INVALID_LOGIN_CREDENTIALS") ||
 			strings.Contains(errorMsg, "EMAIL_NOT_FOUND") ||
 			strings.Contains(errorMsg, "INVALID_PASSWORD") ||
 			strings.Contains(errorMsg, "authentication failed") {
-			return c.JSON(http.StatusUnauthorized, map[string]string{
-				"error": "Invalid email or password",
-			})
+			clientError = "Неверный email или пароль"
+		} else if strings.Contains(errorMsg, "too-many-requests") {
+			clientError = "Слишком много попыток. Попробуйте позже"
+		} else {
+			clientError = "Ошибка входа. Попробуйте позже"
+			log.Printf("Login error (internal): %v", err)
 		}
 
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Login failed: " + errorMsg,
+		return c.JSON(http.StatusUnauthorized, map[string]string{
+			"error": clientError,
 		})
 	}
 

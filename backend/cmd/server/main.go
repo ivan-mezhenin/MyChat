@@ -13,8 +13,8 @@ import (
 	"MyChatServer/internal/registration"
 	"MyChatServer/internal/websocket"
 
-	"github.com/labstack/echo"
-	"github.com/labstack/echo/middleware"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 )
 
 // Entry point of the chat server application.

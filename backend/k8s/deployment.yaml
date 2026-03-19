@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chat-server
+  template:
+    metadata:
+      labels:
+        app: chat-server
+    spec:
+      containers:
+      - name: server
+        image: mychat-server:latest  
+        imagePullPolicy: Never 
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: FIREBASE_API_KEY
+          value: "AIzaSyD_tSQdRPmP62CEHiXFrvykNn5Qp7wf140"
+        volumeMounts:
+        - name: firebase-key
+          mountPath: /app/myChatAdminKey.json
+          subPath: myChatAdminKey.json
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "1500m"
+            memory: "1Gi"
+      volumes:
+      - name: firebase-key
+        secret:
+          secretName: firebase-key

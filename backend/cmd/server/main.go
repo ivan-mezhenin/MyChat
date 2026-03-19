@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"MyChatServer/internal/authentication"
 	"MyChatServer/internal/chat"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"golang.org/x/time/rate"
 )
 
 // Entry point of the chat server application.
@@ -41,7 +43,32 @@ func main() {
 	e := echo.New()
 
 	e.Use(middleware.CORS())
-	e.Use(middleware.Logger())
+	e.Use(middleware.RequestLogger())
+
+	e.Use(middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
+		Skipper: func(c echo.Context) bool {
+			path := c.Path()
+			if path == "/api/auth/login" || path == "/api/auth/register" {
+				return false
+			}
+			return true
+		},
+		Store: middleware.NewRateLimiterMemoryStoreWithConfig(
+			middleware.RateLimiterMemoryStoreConfig{
+				Rate:      rate.Limit(5.0 / 60.0),
+				Burst:     5,
+				ExpiresIn: 3 * time.Minute,
+			},
+		),
+		IdentifierExtractor: func(c echo.Context) (string, error) {
+			return c.RealIP(), nil
+		},
+		DenyHandler: func(c echo.Context, identifier string, err error) error {
+			return c.JSON(http.StatusTooManyRequests, map[string]string{
+				"error": "Too many login/register attempts. Try again later.",
+			})
+		},
+	}))
 
 	e.GET("/ws", func(c echo.Context) error {
 		wsServer.HandleConnection(c.Response(), c.Request())

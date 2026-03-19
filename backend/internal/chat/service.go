@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"MyChatServer/internal/database"
@@ -48,22 +49,42 @@ func (s *Service) GetMessages(ctx context.Context, chatID, userID string) ([]Mes
 		Collection("messages").
 		OrderBy("timestamp", firestore.Asc).
 		Documents(ctx).GetAll()
-
 	if err != nil {
 		return nil, err
 	}
 
-	messages := make([]MessageResponse, len(docs))
-	for i, doc := range docs {
+	messages := make([]MessageResponse, 0, len(docs))
+
+	for _, doc := range docs {
 		data := doc.Data()
 
-		messages[i] = MessageResponse{
-			ID:        doc.Ref.ID,
-			ChatID:    chatID,
-			SenderID:  data["sender_id"].(string),
-			Text:      data["text"].(string),
-			Timestamp: data["timestamp"].(time.Time),
+		msg := MessageResponse{
+			ID:     doc.Ref.ID,
+			ChatID: chatID,
 		}
+
+		if sender, ok := data["sender_id"].(string); ok {
+			msg.SenderID = sender
+		} else {
+			log.Printf("Invalid sender_id type in message %s: got %T, value %v", doc.Ref.ID, data["sender_id"], data["sender_id"])
+			msg.SenderID = "unknown"
+		}
+
+		if text, ok := data["text"].(string); ok {
+			msg.Text = text
+		} else {
+			log.Printf("Invalid text type in message %s: got %T, value %v", doc.Ref.ID, data["text"], data["text"])
+			msg.Text = ""
+		}
+
+		if ts, ok := data["timestamp"].(time.Time); ok {
+			msg.Timestamp = ts
+		} else {
+			log.Printf("Invalid timestamp type in message %s: got %T, value %v", doc.Ref.ID, data["timestamp"], data["timestamp"])
+			msg.Timestamp = time.Now()
+		}
+
+		messages = append(messages, msg)
 	}
 
 	return messages, nil

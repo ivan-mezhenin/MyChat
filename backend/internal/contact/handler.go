@@ -124,7 +124,7 @@ func (h *ContactHandler) DeleteContact(c echo.Context) error {
 		})
 	}
 
-	err = h.service.DeleteContact(c.Request().Context(), ownerUID, contact.ContactUID)
+	err = h.service.DeleteContact(c.Request().Context(), ownerUID, contactID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": err.Error(),

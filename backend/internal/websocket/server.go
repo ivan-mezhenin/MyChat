@@ -54,11 +54,15 @@ func (s *Server) HandleConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.Lock()
-	if oldClient, exists := s.clients[userUID]; exists {
-		oldClient.Connection.Close()
-	}
+
+	oldClient, exists := s.clients[userUID]
+
 	s.clients[userUID] = client
 	s.mu.Unlock()
+
+	if exists && oldClient != nil {
+		oldClient.Connection.Close()
+	}
 
 	connection.SetPongHandler(func(string) error {
 		s.mu.Lock()

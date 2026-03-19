@@ -3,12 +3,16 @@ package registration
 import (
 	"net/http"
 
+	"regexp"
+
 	"github.com/labstack/echo/v4"
 )
 
 type Handler struct {
 	service *Service
 }
+
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 
 func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
@@ -26,6 +30,12 @@ func (h *Handler) RegisterHandler(c echo.Context) error {
 	if req.Username == "" || req.Email == "" || req.Password == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": "All fields are required",
+		})
+	}
+
+	if !emailRegex.MatchString(req.Email) {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "Invalid email format",
 		})
 	}
 

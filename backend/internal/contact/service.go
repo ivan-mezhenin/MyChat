@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"MyChatServer/internal/database"
@@ -114,7 +115,7 @@ func (s *ContactService) GetContacts(ctx context.Context, ownerUID string) ([]Co
 func (s *ContactService) SearchUsers(ctx context.Context, ownerUID, query string) ([]UserSearchResult, error) {
 	results := []UserSearchResult{}
 
-	if len(query) > 3 && contains(query, "@") {
+	if len(query) > 3 && strings.Contains(query, "@") {
 		user, err := s.db.GetUserByEmail(ctx, query)
 		if err == nil && user.UID != ownerUID {
 			isContact, _ := s.isContactExists(ctx, ownerUID, user.UID)
@@ -192,8 +193,4 @@ type UserSearchResult struct {
 	Email     string `json:"email"`
 	Name      string `json:"name"`
 	IsContact bool   `json:"is_contact"`
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && s[:len(substr)] == substr
 }
